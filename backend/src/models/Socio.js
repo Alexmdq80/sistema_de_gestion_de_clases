@@ -89,8 +89,10 @@ export class Socio {
     }
 
     /**
-     * Finds practicantes that have an active abono in a lugar that requires cuota social,
-     * but don't have a socio record yet for that lugar.
+     * Finds practicantes that should be socios:
+     * 1. Have an active abono in a lugar that requires cuota social.
+     * 2. Are professors teaching in a lugar that requires cuota social.
+     * But don't have a socio record yet for that lugar.
      */
     static async findCandidates() {
         const sql = `
@@ -100,14 +102,15 @@ export class Socio {
                    COALESCE(lp.cuota_social_general, l.cuota_social_general) as cuota_social_general,
                    COALESCE(lp.cuota_social_descuento, l.cuota_social_descuento) as cuota_social_descuento
             FROM Practicante p
-            JOIN Abono a ON p.id = a.practicante_id
-            JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
-            JOIN Lugar l ON ta.lugar_id = l.id
+            -- Case 1: Active Abonos
+            LEFT JOIN Abono a ON p.id = a.practicante_id AND a.estado = 'activo' AND a.fecha_vencimiento >= CURDATE() AND a.deleted_at IS NULL
+            LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
+            -- Case 2: Professors teaching at locations
+            LEFT JOIN Horario h ON p.id = h.profesor_id AND h.deleted_at IS NULL AND h.activo = 1
+            -- Join with Lugar through either TipoAbono or Horario
+            JOIN Lugar l ON (ta.lugar_id = l.id OR h.lugar_id = l.id)
             LEFT JOIN Lugar lp ON l.parent_id = lp.id
-            WHERE a.estado = 'activo' 
-              AND a.fecha_vencimiento >= CURDATE()
-              AND a.deleted_at IS NULL
-              AND p.deleted_at IS NULL
+            WHERE p.deleted_at IS NULL
               AND (
                   (l.parent_id IS NULL AND l.cobra_cuota_social = 1) OR
                   (l.parent_id IS NOT NULL AND lp.cobra_cuota_social = 1)

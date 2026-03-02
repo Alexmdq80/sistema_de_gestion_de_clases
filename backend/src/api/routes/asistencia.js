@@ -34,20 +34,12 @@ router.get('/clases/:id/practicantes', asyncHandler(async (req, res) => {
     const asistenciaActual = await Asistencia.findByClase(id);
     const asistieronMap = new Map(asistenciaActual.map(a => [a.practicante_id, a.asistio]));
 
-    // 3. Cruzar datos y obtener conteo semanal
-    const data = await Promise.all(elegibles.map(async (p) => {
-        const asistio = asistieronMap.has(p.id) ? asistieronMap.get(p.id) : false;
-        
-        // Solo contamos si no ha marcado asistencia en ESTA clase específica todavía (para evitar doble conteo si ya asistió)
-        // O si ya marcó, restamos 1 para el mensaje de advertencia si fuera necesario, 
-        // pero es más simple obtener el conteo actual excluyendo esta clase si queremos saber el estado PREVIO.
-        const weeklyCount = await Asistencia.getWeeklyAttendanceCount(p.id, p.abono_id, clase.fecha);
-        
-        return {
-            ...p,
-            asistio,
-            asistencias_esta_semana: weeklyCount
-        };
+    // 3. Cruzar datos
+    const data = elegibles.map(p => ({
+        ...p,
+        asistio: asistieronMap.has(p.id) ? asistieronMap.get(p.id) : false,
+        // Los conteos ya vienen calculados desde Asistencia.getEligiblePracticantes
+        asistencias_esta_semana: p.consumed_count || 0
     }));
 
     res.json({ data });

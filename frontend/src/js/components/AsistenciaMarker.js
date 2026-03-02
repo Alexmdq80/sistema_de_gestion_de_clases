@@ -123,7 +123,6 @@ export class AsistenciaMarker {
                                         <tr>
                                             <th style="width: 50px;">Asistió</th>
                                             <th>Alumno</th>
-                                            <th>Abono / Cuota</th>
                                         </tr>
                                     </thead>
                                     <tbody id="attendance-table-body">
@@ -145,16 +144,12 @@ export class AsistenciaMarker {
 
     renderPracticantesRows(canModify, isClosed) {
         return this.practicantes.map(p => {
-            const isGroupOrShared = p.categoria === 'grupal' || p.categoria === 'compartida';
-            const limitReached = isGroupOrShared && p.asistencias_esta_semana >= p.clases_por_semana;
-            const warningClass = limitReached && !p.asistio ? 'table-warning' : '';
             return `
-            <tr class="${warningClass}">
+            <tr>
                 <td>
                     <div class="flex items-center justify-center" style="display: flex; align-items: center; justify-content: center; height: 100%;">
                         <input type="checkbox" class="attendance-checkbox" 
                             data-id="${p.id}" 
-                            data-limit-reached="${limitReached}"
                             data-nombre="${p.nombre_completo}"
                             ${p.asistio ? 'checked' : ''} 
                             ${!canModify || isClosed ? 'disabled' : ''}
@@ -163,34 +158,13 @@ export class AsistenciaMarker {
                 </td>
                 <td>
                     <strong>${p.nombre_completo}</strong>
-                    ${limitReached && !p.asistio ? `<br><small class="text-danger"><i class="fas fa-exclamation-triangle"></i> Límite semanal alcanzado (${p.asistencias_esta_semana}/${p.clases_por_semana})</small>` : ''}
-                </td>
-                <td>
-                    <small class="text-muted">${p.abono_nombre}</small><br>
-                    <small class="${limitReached ? 'text-danger font-weight-bold' : 'text-success'}">
-                        ${(p.categoria === 'particular' || p.categoria === 'compartida') 
-                            ? `Disponibles: ${Math.max(0, p.cantidad_total - p.consumed_count)}`
-                            : `Semanales: ${p.asistencias_esta_semana} / ${p.clases_por_semana}`
-                        }
-                    </small>
                 </td>
             </tr>
         `;}).join('');
     }
 
     attachCheckboxEvents() {
-        const checkboxes = this.container.querySelectorAll('.attendance-checkbox');
-        checkboxes.forEach(cb => {
-            cb.addEventListener('change', (e) => {
-                const limitReached = cb.getAttribute('data-limit-reached') === 'true';
-                const nombre = cb.getAttribute('data-nombre');
-                if (cb.checked && limitReached) {
-                    if (!confirm(`${nombre} ya ha alcanzado o superado su límite de clases semanales. ¿Desea marcar la asistencia de todas formas?`)) {
-                        cb.checked = false;
-                    }
-                }
-            });
-        });
+        // No extra events needed for now as we removed the limit logic
     }
 
     attachEvents() {

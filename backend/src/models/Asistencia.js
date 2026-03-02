@@ -58,33 +58,27 @@ export class Asistencia {
      * Esto es clave para mostrar la lista de "presentismo".
      */
     static async getEligiblePracticantes(clase) {
-        // Mostramos a TODOS los alumnos del sistema para todas las clases y estados,
-        // EXCEPTO a aquellos que están marcados como profesores.
+        const fechaClase = (clase.fecha instanceof Date) 
+            ? clase.fecha.toISOString().split('T')[0] 
+            : clase.fecha;
+
         const sql = `
-            SELECT p.id, p.nombre_completo, 
-                   MAX(ab.id) as abono_id, 
-                   MAX(IFNULL(ta.nombre, 'Sin Abono Activo')) as abono_nombre, 
-                   MAX(IFNULL(ta.clases_por_semana, 0)) as clases_por_semana, 
-                   MAX(IFNULL(ab.cantidad, 0)) as cantidad_total,
-                   MAX(ta.categoria) as categoria,
-                   (
-                       SELECT COUNT(*) 
-                       FROM Asistencia a2 
-                       JOIN Clase c2 ON a2.clase_id = c2.id 
-                       WHERE a2.practicante_id = p.id 
-                         AND a2.asistio = 1 
-                         AND c2.deleted_at IS NULL
-                         AND c2.fecha >= MAX(ab.fecha_inicio)
-                         AND c2.fecha <= MAX(ab.fecha_vencimiento)
-                   ) as consumed_count
+            SELECT 
+                p.id, 
+                p.nombre_completo, 
+                IFNULL(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo') as abono_nombre
             FROM Practicante p
-            LEFT JOIN Abono ab ON p.id = ab.practicante_id AND ab.estado = 'activo' AND ab.deleted_at IS NULL
+            LEFT JOIN Abono ab ON p.id = ab.practicante_id 
+                AND ab.estado = 'activo' 
+                AND ab.deleted_at IS NULL
+                AND ab.fecha_inicio <= ?
+                AND ab.fecha_vencimiento >= ?
             LEFT JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
             WHERE p.deleted_at IS NULL AND p.es_profesor = 0
             GROUP BY p.id, p.nombre_completo
             ORDER BY p.nombre_completo ASC
         `;
-        const [rows] = await pool.execute(sql);
+        const [rows] = await pool.execute(sql, [fechaClase, fechaClase]);
         return rows;
     }
 
