@@ -390,6 +390,7 @@ export class PracticanteDetail {
     const closePaymentModalBtn = paymentModal.querySelector('.close-button');
     const paymentForm = this.container.querySelector('#payment-form');
     const tipoAbonoSelect = this.container.querySelector('#tipo-abono-select');
+    const fechaPagoInput = this.container.querySelector('#fecha-pago-input');
 
     if (editBtn) {
       editBtn.addEventListener('click', () => {
@@ -413,6 +414,16 @@ export class PracticanteDetail {
     if (closePaymentModalBtn) {
         closePaymentModalBtn.addEventListener('click', () => {
             paymentModal.style.display = 'none';
+        });
+    }
+
+    if (fechaPagoInput) {
+        fechaPagoInput.addEventListener('change', (e) => {
+            const mesAbonoSelect = this.container.querySelector('#mes-abono-select');
+            if (mesAbonoSelect) {
+                const selectedDate = e.target.value ? new Date(e.target.value + 'T12:00:00') : new Date();
+                mesAbonoSelect.innerHTML = this.generateMonthOptions(selectedDate);
+            }
         });
     }
 
@@ -584,13 +595,16 @@ export class PracticanteDetail {
     }
   }
 
-  generateMonthOptions() {
+  generateMonthOptions(baseDate = new Date()) {
     const options = [];
-    const today = new Date();
     
-    // Current month and next 2 months
+    // Use the baseDate to start calculating months
+    // We create a new date object from baseDate to avoid modifying the original
+    const startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+    
+    // Current month and next 2 months from baseDate
     for (let i = 0; i < 3; i++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+        const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
         const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
         options.push(`<option value="${value}">${label.charAt(0).toUpperCase() + label.slice(1)}</option>`);
@@ -682,8 +696,15 @@ export class PracticanteDetail {
     form.reset();
     
     // Set default date
-    const today = new Date().toISOString().split('T')[0];
-    form.querySelector('#fecha-pago-input').value = today;
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    form.querySelector('#fecha-pago-input').value = todayStr;
+    
+    // Initialize month options based on default date
+    const mesAbonoSelect = form.querySelector('#mes-abono-select');
+    if (mesAbonoSelect) {
+        mesAbonoSelect.innerHTML = this.generateMonthOptions(today);
+    }
     
     modal.style.display = 'block';
     this.updateAbonoDetails();
