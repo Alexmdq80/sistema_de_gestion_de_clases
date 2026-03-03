@@ -59,7 +59,7 @@ router.post('/', asyncHandler(async (req, res) => {
     const { practicante_id, lugar_id, numero_socio } = req.body;
     const userId = req.user.userId;
 
-    if (!practicante_id || !lugar_id || !numero_socio) {
+    if (!practicante_id || !lugar_id) {
         throw new AppError('Faltan campos obligatorios', 400);
     }
 

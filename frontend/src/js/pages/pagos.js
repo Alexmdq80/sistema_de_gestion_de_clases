@@ -185,20 +185,28 @@ export class PagosPage {
       const summaryContainer = this.container.querySelector('#pagos-summary');
       if (!summaryContainer) return;
 
-      const totalTaiChi = this.pagos
-        .filter(p => ['grupal', 'particular', 'compartida'].includes(p.categoria))
+      const totalIngresos = this.pagos
+        .filter(p => parseFloat(p.monto) > 0)
         .reduce((sum, p) => sum + parseFloat(p.monto), 0);
       
-      const totalGral = this.pagos.reduce((sum, p) => sum + parseFloat(p.monto), 0);
+      const totalEgresos = this.pagos
+        .filter(p => parseFloat(p.monto) < 0)
+        .reduce((sum, p) => sum + Math.abs(parseFloat(p.monto)), 0);
+
+      const saldoCaja = totalIngresos - totalEgresos;
 
       summaryContainer.innerHTML = `
-        <div class="card" style="border-left: 5px solid var(--primary-color);">
-            <p class="text-muted">Recaudado Clases</p>
-            <h2 style="margin: 0;">$${totalTaiChi.toFixed(2)}</h2>
+        <div class="card" style="border-left: 5px solid var(--success-color);">
+            <p class="text-muted">Total Ingresos</p>
+            <h2 style="margin: 0; color: var(--success-color);">$${totalIngresos.toFixed(2)}</h2>
         </div>
-        <div class="card" style="background: #f8f9fa;">
-            <p class="text-muted">Total General</p>
-            <h2 style="margin: 0;">$${totalGral.toFixed(2)}</h2>
+        <div class="card" style="border-left: 5px solid var(--danger-color);">
+            <p class="text-muted">Total Egresos</p>
+            <h2 style="margin: 0; color: var(--danger-color);">-$${totalEgresos.toFixed(2)}</h2>
+        </div>
+        <div class="card" style="background: #f8f9fa; border-left: 5px solid #333;">
+            <p class="text-muted">Saldo en Caja</p>
+            <h2 style="margin: 0;">$${saldoCaja.toFixed(2)}</h2>
         </div>
       `;
   }
@@ -226,6 +234,8 @@ export class PagosPage {
         </thead>
         <tbody>
           ${this.pagos.map(pago => {
+            const monto = parseFloat(pago.monto);
+            const isEgreso = monto < 0;
             const isVencimientoReal = pago.fecha_vencimiento && !pago.fecha_vencimiento.startsWith('2099');
             const isCuotaSocial = !pago.categoria && pago.tipo_abono_nombre === 'Recepción Cuota Social';
             
@@ -234,33 +244,40 @@ export class PagosPage {
                 vencimientoHtml = formatDateReadable(pago.fecha_vencimiento);
             } else if (isCuotaSocial) {
                 vencimientoHtml = '<em class="text-muted">a determinar...</em>';
+            } else if (isEgreso) {
+                vencimientoHtml = '-';
             } else {
                 vencimientoHtml = '<em class="text-muted">Flexible</em>';
             }
 
             return `
-            <tr>
+            <tr class="${isEgreso ? 'bg-light-danger' : ''}">
               <td>
-                <a href="#" class="view-practicante-link" data-id="${pago.practicante_id}">
+                <a href="#" class="view-person-link" data-id="${pago.practicante_id}" data-tipo="${isEgreso ? 'profesor' : 'practicante'}">
                   ${this.escapeHtml(pago.practicante_nombre || 'Desconocido')}
                 </a>
               </td>
               <td>
-                ${pago.categoria ? `<span class="badge ${this.getBadgeClass(pago.categoria)}">${this.formatCategoria(pago.categoria)}</span>` : ''}
+                ${pago.categoria ? `<span class="badge ${this.getBadgeClass(pago.categoria)}">${this.formatCategoria(pago.categoria)}</span>` : 
+                  (isEgreso ? '<span class="badge badge-danger">Egreso</span>' : '<span class="badge badge-success">Socio</span>')}
               </td>
               <td>
-                <strong>${this.escapeHtml(pago.tipo_abono_nombre || 'Desconocido')}</strong>
+                <strong class="${isEgreso ? 'text-danger' : ''}">${this.escapeHtml(pago.tipo_abono_nombre || 'Desconocido')}</strong>
                 ${pago.mes_abono ? `<br><small class="text-muted">Mes: ${pago.mes_abono}</small>` : ''}
               </td>
               <td>
                 ${this.renderLugarHorario(pago)}
               </td>
-              <td>$${parseFloat(pago.monto).toFixed(2)}</td>
+              <td class="${isEgreso ? 'text-danger font-weight-bold' : 'text-success font-weight-bold'}">
+                ${isEgreso ? '-' : ''}$${Math.abs(monto).toFixed(2)}
+              </td>
               <td>${formatDateReadable(pago.fecha)}</td>
               <td>${vencimientoHtml}</td>
               <td>${pago.metodo_pago || '-'}</td>
               <td>
-                <button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}">Eliminar</button>
+                ${isEgreso ? 
+                  '<small class="text-muted italic">Gestionar en Costos</small>' : 
+                  `<button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}">Eliminar</button>`}
               </td>
             </tr>
           `}).join('')}
@@ -269,11 +286,16 @@ export class PagosPage {
     `;
 
     // Attach row events
-    content.querySelectorAll('.view-practicante-link').forEach(link => {
+    content.querySelectorAll('.view-person-link').forEach(link => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        const id = e.target.getAttribute('data-id');
-        navigate(`/practicantes/${id}/pagar`);
+        const id = link.getAttribute('data-id');
+        const tipo = link.getAttribute('data-tipo');
+        if (tipo === 'profesor') {
+            navigate('/costos');
+        } else {
+            navigate(`/practicantes/${id}/pagar`);
+        }
       });
     });
 

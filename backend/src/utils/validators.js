@@ -168,8 +168,8 @@ export function validateTipoAbono(data) {
     // Validate precio
     if (data.precio !== undefined && data.precio !== null && data.precio !== '') {
         const price = parseFloat(data.precio);
-        if (isNaN(price) || price <= 0) {
-            errors.push({ field: 'precio', message: 'Precio must be a positive number' });
+        if (isNaN(price) || price < 0) {
+            errors.push({ field: 'precio', message: 'Precio must be a non-negative number' });
         }
     }
 

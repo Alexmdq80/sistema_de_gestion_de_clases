@@ -61,9 +61,16 @@ export class SociosPage {
                                 <p id="display-lugar-nombre" class="form-control-plaintext"></p>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group" id="numero-socio-group">
                                 <label for="numero-socio">Número de Socio</label>
-                                <input type="text" id="numero-socio" class="form-control" required placeholder="Ej: 1234/A">
+                                <input type="text" id="numero-socio" class="form-control" placeholder="Ej: 1234/A">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="flex items-center gap-2 cursor-pointer" style="display: flex; align-items: center; gap: 0.5rem; width: fit-content; cursor: pointer;">
+                                    <input type="checkbox" id="no-tengo-numero" style="width: auto; margin: 0;">
+                                    <span>No tengo el número de socio</span>
+                                </label>
                             </div>
 
                             <div class="form-actions mt-4">
@@ -239,6 +246,19 @@ export class SociosPage {
 
         // Socio Modal events
         const socioModal = this.container.querySelector('#socio-modal');
+        const noTengoNumeroCheckbox = this.container.querySelector('#no-tengo-numero');
+        const numeroSocioGroup = this.container.querySelector('#numero-socio-group');
+        const numeroSocioInput = this.container.querySelector('#numero-socio');
+
+        noTengoNumeroCheckbox.addEventListener('change', () => {
+            if (noTengoNumeroCheckbox.checked) {
+                numeroSocioGroup.style.display = 'none';
+                numeroSocioInput.value = '';
+            } else {
+                numeroSocioGroup.style.display = 'block';
+            }
+        });
+
         this.container.querySelector('.close-modal').onclick = () => socioModal.style.display = 'none';
         this.container.querySelector('.cancel-modal').onclick = () => socioModal.style.display = 'none';
         this.container.querySelector('#socio-form').onsubmit = async (e) => {
@@ -408,7 +428,7 @@ export class SociosPage {
                         <tr>
                             <td><strong>${s.nombre_completo}</strong></td>
                             <td>${s.lugar_nombre}</td>
-                            <td><span class="badge badge-info">${s.numero_socio}</span></td>
+                            <td><span class="badge badge-info">${s.numero_socio || 'S/N'}</span></td>
                             <td>
                                 <button class="btn btn-sm btn-outline-info view-payments-btn" data-id="${s.id}"><i class="fas fa-history"></i> Historial</button>
                                 ${s.es_profesor ? `<button class="btn btn-sm btn-success pay-cuota-btn" data-id="${s.id}"><i class="fas fa-money-bill-wave"></i> Registrar Pago</button>` : ''}
@@ -513,7 +533,7 @@ export class SociosPage {
                 <div class="flex justify-between items-center">
                     <div>
                         <h3>Historial de Cuotas Sociales</h3>
-                        <p><strong>Socio:</strong> ${this.selectedSocio.nombre_completo} | <strong>Lugar:</strong> ${this.selectedSocio.lugar_nombre} | <strong>Nº:</strong> ${this.selectedSocio.numero_socio}</p>
+                        <p><strong>Socio:</strong> ${this.selectedSocio.nombre_completo} | <strong>Lugar:</strong> ${this.selectedSocio.lugar_nombre} | <strong>Nº:</strong> ${this.selectedSocio.numero_socio || 'S/N'}</p>
                     </div>
                     <div>
                         <button id="back-to-list" class="btn btn-outline-secondary ml-2">Volver al listado</button>
@@ -582,7 +602,15 @@ export class SociosPage {
         this.container.querySelector('#lugar-id').value = lugarId;
         this.container.querySelector('#display-practicante-nombre').textContent = practicanteNombre;
         this.container.querySelector('#display-lugar-nombre').textContent = lugarNombre;
-        this.container.querySelector('#numero-socio').value = '';
+        
+        const numeroSocioInput = this.container.querySelector('#numero-socio');
+        const noTengoNumeroCheckbox = this.container.querySelector('#no-tengo-numero');
+        const numeroSocioGroup = this.container.querySelector('#numero-socio-group');
+        
+        numeroSocioInput.value = '';
+        noTengoNumeroCheckbox.checked = false;
+        numeroSocioGroup.style.display = 'block';
+        
         modal.style.display = 'block';
     }
 
@@ -596,16 +624,26 @@ export class SociosPage {
         this.container.querySelector('#lugar-id').value = socio.lugar_id;
         this.container.querySelector('#display-practicante-nombre').textContent = socio.nombre_completo;
         this.container.querySelector('#display-lugar-nombre').textContent = socio.lugar_nombre;
-        this.container.querySelector('#numero-socio').value = socio.numero_socio;
+        
+        const numeroSocioInput = this.container.querySelector('#numero-socio');
+        const noTengoNumeroCheckbox = this.container.querySelector('#no-tengo-numero');
+        const numeroSocioGroup = this.container.querySelector('#numero-socio-group');
+        
+        const hasNoNumber = !socio.numero_socio || socio.numero_socio.trim() === '';
+        numeroSocioInput.value = socio.numero_socio || '';
+        noTengoNumeroCheckbox.checked = hasNoNumber;
+        numeroSocioGroup.style.display = hasNoNumber ? 'none' : 'block';
+        
         modal.style.display = 'block';
     }
 
     async handleSaveSocio() {
         const id = this.container.querySelector('#socio-id').value;
+        const noTengoNumero = this.container.querySelector('#no-tengo-numero').checked;
         const data = {
             practicante_id: parseInt(this.container.querySelector('#practicante-id').value),
             lugar_id: parseInt(this.container.querySelector('#lugar-id').value),
-            numero_socio: this.container.querySelector('#numero-socio').value
+            numero_socio: noTengoNumero ? '' : this.container.querySelector('#numero-socio').value.trim()
         };
         try {
             if (id) {

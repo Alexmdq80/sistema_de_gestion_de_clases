@@ -131,7 +131,7 @@ export class TipoAbonoForm {
               type="number" 
               id="precio" 
               name="precio" 
-              value="${tipoAbono.precio || ''}"
+              value="${tipoAbono.precio !== null && tipoAbono.precio !== undefined ? tipoAbono.precio : ''}"
               step="0.01"
               min="0"
             />

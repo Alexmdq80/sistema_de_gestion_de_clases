@@ -64,55 +64,95 @@ export class Pago {
     }
 
     /**
-     * Find all payments
+     * Find all payments (incomes and expenses)
      * @param {Object} [filters] - Optional filters
      * @returns {Promise<Pago[]>}
      */
     static async findAll(filters = {}) {
         let sql = `
-            SELECT p.*, COALESCE(ta.nombre, 'Recepción Cuota Social') as tipo_abono_nombre, ta.categoria, pr.nombre_completo as practicante_nombre,
-                   a.fecha_vencimiento, l.nombre as lugar_nombre,
-                   (SELECT JSON_ARRAYAGG(horario_id) FROM TipoAbono_Horario WHERE tipo_abono_id = ta.id) as schedules
-            FROM Pago p
-            LEFT JOIN Abono a ON p.abono_id = a.id
-            LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
-            JOIN Practicante pr ON p.practicante_id = pr.id
-            LEFT JOIN Lugar l ON p.lugar_id = l.id
-            WHERE p.deleted_at IS NULL
+            SELECT * FROM (
+                -- Incomes (Student payments and Social Fees)
+                SELECT 
+                    p.id, p.practicante_id, p.abono_id, p.pago_socio_id, p.mes_abono, p.lugar_id, 
+                    p.fecha, p.monto, p.metodo_pago, p.notas, p.deleted_at, p.created_at, p.updated_at,
+                    COALESCE(ta.nombre, 'Recepción Cuota Social') as tipo_abono_nombre, 
+                    ta.categoria, 
+                    pr.nombre_completo as practicante_nombre,
+                    a.fecha_vencimiento, 
+                    l.nombre as lugar_nombre,
+                    (SELECT JSON_ARRAYAGG(horario_id) FROM TipoAbono_Horario WHERE tipo_abono_id = ta.id) as schedules,
+                    'ingreso' as pago_tipo,
+                    ta.id as tipo_abono_id
+                FROM Pago p
+                LEFT JOIN Abono a ON p.abono_id = a.id
+                LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
+                JOIN Practicante pr ON p.practicante_id = pr.id
+                LEFT JOIN Lugar l ON p.lugar_id = l.id
+                WHERE p.deleted_at IS NULL
+
+                UNION ALL
+
+                -- Expenses (Professor payments for classes)
+                -- We calculate the amount based on Lugar's tarifa
+                SELECT 
+                    c.id * -1 as id, c.profesor_id as practicante_id, NULL as abono_id, NULL as pago_socio_id, 
+                    NULL as mes_abono, c.lugar_id, 
+                    c.fecha_pago_profesor as fecha, 
+                    (CASE 
+                        WHEN l.tipo_tarifa = 'por_clase' THEN l.costo_tarifa 
+                        ELSE l.costo_tarifa * (TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora)) / 3600)
+                    END) * -1 as monto, 
+                    'transferencia' as metodo_pago, 
+                    CONCAT('Pago Profesor: ', c.estado) as notas, 
+                    c.deleted_at, c.created_at, c.updated_at,
+                    'Pago Profesor' as tipo_abono_nombre, 
+                    NULL as categoria, 
+                    p.nombre_completo as practicante_nombre,
+                    NULL as fecha_vencimiento, 
+                    l.nombre as lugar_nombre,
+                    '[]' as schedules,
+                    'egreso' as pago_tipo,
+                    NULL as tipo_abono_id
+                FROM Clase c
+                JOIN Lugar l ON c.lugar_id = l.id
+                JOIN Practicante p ON c.profesor_id = p.id
+                WHERE c.deleted_at IS NULL AND c.pago_profesor_realizado = 1
+            ) as global_pagos
+            WHERE 1=1
         `;
         const params = [];
 
         if (filters.search) {
-            sql += ' AND (pr.nombre_completo LIKE ? OR ta.nombre LIKE ?)';
+            sql += ' AND (practicante_nombre LIKE ? OR tipo_abono_nombre LIKE ?)';
             params.push(`%${filters.search}%`, `%${filters.search}%`);
         }
 
         if (filters.categoria) {
-            sql += ' AND ta.categoria = ?';
+            sql += ' AND categoria = ?';
             params.push(filters.categoria);
         }
 
         if (filters.mes) {
-            sql += ' AND MONTH(p.fecha) = ?';
+            sql += ' AND MONTH(fecha) = ?';
             params.push(filters.mes);
         }
 
         if (filters.anio) {
-            sql += ' AND YEAR(p.fecha) = ?';
+            sql += ' AND YEAR(fecha) = ?';
             params.push(filters.anio);
         }
 
         if (filters.tipo_abono_id) {
-            sql += ' AND ta.id = ?';
+            sql += ' AND tipo_abono_id = ?';
             params.push(filters.tipo_abono_id);
         }
 
         if (filters.lugar_id) {
-            sql += ' AND p.lugar_id = ?';
+            sql += ' AND lugar_id = ?';
             params.push(filters.lugar_id);
         }
 
-        sql += ' ORDER BY p.fecha DESC, p.created_at DESC';
+        sql += ' ORDER BY fecha DESC, created_at DESC';
 
         const [rows] = await pool.execute(sql, params);
         return rows.map(row => {

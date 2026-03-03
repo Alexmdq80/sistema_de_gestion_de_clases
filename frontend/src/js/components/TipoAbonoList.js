@@ -99,7 +99,7 @@ export class TipoAbonoList {
                 ${tipoAbono.categoria === 'grupal' ? `<br><small class="text-muted">${tipoAbono.clases_por_semana} clase${tipoAbono.clases_por_semana > 1 ? 's' : ''}/sem.</small>` : ''}
                 ${tipoAbono.categoria === 'compartida' ? `<br><small class="text-info">Compartida: ${tipoAbono.max_personas} pers.</small>` : ''}
               </td>
-              <td>${tipoAbono.precio ? '$' + parseFloat(tipoAbono.precio).toFixed(2) : '-'}</td>
+              <td>${tipoAbono.precio !== null && tipoAbono.precio !== undefined ? '$' + parseFloat(tipoAbono.precio).toFixed(2) : '-'}</td>
               <td>
                 <div class="flex gap-2">
                     <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${tipoAbono.id}">Editar</button>

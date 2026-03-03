@@ -356,7 +356,7 @@ export class PracticanteDetail {
             if (cuotaLugarSelect) {
                 cuotaLugarSelect.innerHTML = this.socios.map(s => `
                     <option value="${s.id}">
-                        ${s.lugar_nombre} (Socio Nº ${s.numero_socio})
+                        ${s.lugar_nombre} (Socio: ${s.numero_socio || 'S/N'})
                     </option>
                 `).join('');
                 
