@@ -15,8 +15,8 @@ export class Clase {
         this.motivo_cancelacion = data.motivo_cancelacion || null;
         this.observaciones = data.observaciones || null;
         this.usuario_id = data.usuario_id || null;
-        this.pago_profesor_realizado = data.pago_profesor_realizado !== undefined ? !!data.pago_profesor_realizado : false;
-        this.fecha_pago_profesor = data.fecha_pago_profesor || null;
+        this.pago_espacio_realizado = data.pago_espacio_realizado !== undefined ? !!data.pago_espacio_realizado : false;
+        this.fecha_pago_espacio = data.fecha_pago_espacio || null;
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
         this.deleted_at = data.deleted_at || null;
@@ -121,7 +121,7 @@ export class Clase {
         const allowedFields = [
             'tipo', 'estado', 'motivo_cancelacion', 'observaciones', 
             'fecha', 'hora', 'hora_fin', 'profesor_id',
-            'pago_profesor_realizado', 'fecha_pago_profesor'
+            'pago_espacio_realizado', 'fecha_pago_espacio'
         ];
 
         const updates = [];
@@ -158,11 +158,11 @@ export class Clase {
             fechaFormatted = this.fecha.split('T')[0];
         }
 
-        let fechaPagoFormatted = this.fecha_pago_profesor;
-        if (this.fecha_pago_profesor instanceof Date) {
-            fechaPagoFormatted = this.fecha_pago_profesor.toISOString().split('T')[0];
-        } else if (typeof this.fecha_pago_profesor === 'string' && this.fecha_pago_profesor.includes('T')) {
-            fechaPagoFormatted = this.fecha_pago_profesor.split('T')[0];
+        let fechaPagoFormatted = this.fecha_pago_espacio;
+        if (this.fecha_pago_espacio instanceof Date) {
+            fechaPagoFormatted = this.fecha_pago_espacio.toISOString().split('T')[0];
+        } else if (typeof this.fecha_pago_espacio === 'string' && this.fecha_pago_espacio.includes('T')) {
+            fechaPagoFormatted = this.fecha_pago_espacio.split('T')[0];
         }
 
         return {
@@ -179,8 +179,8 @@ export class Clase {
             motivo_cancelacion: this.motivo_cancelacion,
             observaciones: this.observaciones,
             usuario_id: this.usuario_id,
-            pago_profesor_realizado: this.pago_profesor_realizado,
-            fecha_pago_profesor: fechaPagoFormatted,
+            pago_espacio_realizado: this.pago_espacio_realizado,
+            fecha_pago_espacio: fechaPagoFormatted,
             actividad_nombre: this.actividad_nombre,
             lugar_nombre: this.lugar_nombre,
             profesor_nombre: this.profesor_nombre,

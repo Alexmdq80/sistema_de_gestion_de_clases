@@ -21,6 +21,10 @@ export class PagosPage {
     this.anioFilter = new Date().getFullYear();
     this.tipoAbonoFilter = '';
     this.lugarFilter = '';
+    this.useMesAbonoFilter = false;
+    this.includeCuotaSocial = true;
+    this.includeProfesorPago = true;
+    this.includeEspacioCosto = true;
   }
 
   async render() {
@@ -81,6 +85,10 @@ export class PagosPage {
                     <option value="">Todos</option>
                     ${months.map((m, i) => `<option value="${i + 1}" ${this.mesFilter == (i + 1) ? 'selected' : ''}>${m}</option>`).join('')}
                 </select>
+                <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="use-mes-abono-filter" ${this.useMesAbonoFilter ? 'checked' : ''}>
+                    <label for="use-mes-abono-filter" style="font-size: 0.85rem; margin-bottom: 0;">Usar Mes de Abono</label>
+                </div>
             </div>
             <div class="form-group">
                 <label>Año</label>
@@ -102,6 +110,20 @@ export class PagosPage {
                     <option value="">Todos</option>
                     ${this.lugares.map(l => `<option value="${l.id}" ${this.lugarFilter == l.id ? 'selected' : ''}>${l.nombre}</option>`).join('')}
                 </select>
+                <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="include-cuota-social" ${this.includeCuotaSocial ? 'checked' : ''}>
+                        <label for="include-cuota-social" style="font-size: 0.85rem; margin-bottom: 0;">Incluir Cuotas Sociales (Todas)</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="include-profesor-pago" ${this.includeProfesorPago ? 'checked' : ''}>
+                        <label for="include-profesor-pago" style="font-size: 0.85rem; margin-bottom: 0;">Cuotas Sociales Profesores (Mostrar/Ocultar)</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="include-espacio-costo" ${this.includeEspacioCosto ? 'checked' : ''}>
+                        <label for="include-espacio-costo" style="font-size: 0.85rem; margin-bottom: 0;">Costo del Espacio (Mostrar/Ocultar)</label>
+                    </div>
+                </div>
             </div>
             <div class="form-group">
                 <button id="search-btn" class="btn btn-primary btn-block">Aplicar Filtros</button>
@@ -130,6 +152,10 @@ export class PagosPage {
         this.anioFilter = this.container.querySelector('#anio-filter').value;
         this.tipoAbonoFilter = this.container.querySelector('#tipo-abono-filter').value;
         this.lugarFilter = this.container.querySelector('#lugar-filter').value;
+        this.useMesAbonoFilter = this.container.querySelector('#use-mes-abono-filter').checked;
+        this.includeCuotaSocial = this.container.querySelector('#include-cuota-social').checked;
+        this.includeProfesorPago = this.container.querySelector('#include-profesor-pago').checked;
+        this.includeEspacioCosto = this.container.querySelector('#include-espacio-costo').checked;
         this.loadPagos();
     };
 
@@ -146,7 +172,7 @@ export class PagosPage {
     }
 
     // Auto-trigger on select changes
-    ['#categoria-filter', '#mes-filter', '#tipo-abono-filter', '#lugar-filter'].forEach(selector => {
+    ['#categoria-filter', '#mes-filter', '#tipo-abono-filter', '#lugar-filter', '#use-mes-abono-filter', '#include-cuota-social', '#include-profesor-pago', '#include-espacio-costo'].forEach(selector => {
         const el = this.container.querySelector(selector);
         if (el) el.addEventListener('change', triggerSearch);
     });
@@ -164,6 +190,10 @@ export class PagosPage {
       if (this.anioFilter) params.append('anio', this.anioFilter);
       if (this.tipoAbonoFilter) params.append('tipo_abono_id', this.tipoAbonoFilter);
       if (this.lugarFilter) params.append('lugar_id', this.lugarFilter);
+      if (this.useMesAbonoFilter) params.append('filter_by_mes_abono', 'true');
+      if (!this.includeCuotaSocial) params.append('exclude_cuota_social', 'true');
+      if (!this.includeProfesorPago) params.append('exclude_profesor_pago', 'true');
+      if (!this.includeEspacioCosto) params.append('exclude_espacio_costo', 'true');
       
       const [pagoRes, horariosRes] = await Promise.all([
         makeRequest(`/pagos?${params.toString()}`, 'GET', null, true),

@@ -127,7 +127,7 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
     }
 
     // Handle salon cost charging if requested (only when marking as paid)
-    if (data.pago_profesor_realizado === true && data.cobrar_salon && (clase.estado === 'cancelada' || clase.estado === 'suspendida')) {
+    if (data.pago_espacio_realizado === true && data.cobrar_salon && (clase.estado === 'cancelada' || clase.estado === 'suspendida')) {
         const lugar = await Lugar.findById(clase.lugar_id);
         if (lugar && lugar.costo_tarifa > 0 && data.practicantes_ids && Array.isArray(data.practicantes_ids)) {
             for (const pId of data.practicantes_ids) {
@@ -145,8 +145,8 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         }
     }
 
-    // NEW: If unmarking professor payment, cancel associated pending debts for this class
-    if (data.pago_profesor_realizado === false && clase.pago_profesor_realizado === true) {
+    // NEW: If unmarking space payment, cancel associated pending debts for this class
+    if (data.pago_espacio_realizado === false && clase.pago_espacio_realizado === true) {
         await Deuda.cancelByClaseId(clase.id, userId);
     }
 
@@ -159,8 +159,8 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         hora: cleanHora,
         hora_fin: cleanHoraFin,
         profesor_id: data.profesor_id !== undefined ? data.profesor_id : clase.profesor_id,
-        pago_profesor_realizado: data.pago_profesor_realizado !== undefined ? data.pago_profesor_realizado : clase.pago_profesor_realizado,
-        fecha_pago_profesor: data.fecha_pago_profesor !== undefined ? data.fecha_pago_profesor : clase.fecha_pago_profesor
+        pago_espacio_realizado: data.pago_espacio_realizado !== undefined ? data.pago_espacio_realizado : clase.pago_espacio_realizado,
+        fecha_pago_espacio: data.fecha_pago_espacio !== undefined ? data.fecha_pago_espacio : clase.fecha_pago_espacio
     });
 
     res.json({ data: updatedClase.toJSON() });

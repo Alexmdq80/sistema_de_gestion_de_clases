@@ -13,14 +13,18 @@ router.use(authenticateToken);
  * Get all payments with optional filtering
  */
 router.get('/', asyncHandler(async (req, res) => {
-    const { search = '', categoria = '', mes, anio, tipo_abono_id, lugar_id } = req.query;
+    const { search = '', categoria = '', mes, anio, tipo_abono_id, lugar_id, filter_by_mes_abono, exclude_cuota_social, exclude_profesor_pago, exclude_espacio_costo } = req.query;
     const pagos = await PagoService.getAllPayments({ 
         search, 
         categoria,
         mes: mes ? parseInt(mes, 10) : undefined,
         anio: anio ? parseInt(anio, 10) : undefined,
         tipo_abono_id: tipo_abono_id ? parseInt(tipo_abono_id, 10) : undefined,
-        lugar_id: lugar_id ? parseInt(lugar_id, 10) : undefined
+        lugar_id: lugar_id ? parseInt(lugar_id, 10) : undefined,
+        filter_by_mes_abono: filter_by_mes_abono === 'true',
+        exclude_cuota_social: exclude_cuota_social === 'true',
+        exclude_profesor_pago: exclude_profesor_pago === 'true',
+        exclude_espacio_costo: exclude_espacio_costo === 'true'
     });
     res.status(200).json({ data: pagos });
 }));

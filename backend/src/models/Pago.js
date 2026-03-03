@@ -82,7 +82,8 @@ export class Pago {
                     l.nombre as lugar_nombre,
                     (SELECT JSON_ARRAYAGG(horario_id) FROM TipoAbono_Horario WHERE tipo_abono_id = ta.id) as schedules,
                     'ingreso' as pago_tipo,
-                    ta.id as tipo_abono_id
+                    ta.id as tipo_abono_id,
+                    pr.es_profesor
                 FROM Pago p
                 LEFT JOIN Abono a ON p.abono_id = a.id
                 LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
@@ -92,31 +93,57 @@ export class Pago {
 
                 UNION ALL
 
-                -- Expenses (Professor payments for classes)
-                -- We calculate the amount based on Lugar's tarifa
+                -- Expenses (Costo de Espacio - from Clase)
                 SELECT 
                     c.id * -1 as id, c.profesor_id as practicante_id, NULL as abono_id, NULL as pago_socio_id, 
                     NULL as mes_abono, c.lugar_id, 
-                    c.fecha_pago_profesor as fecha, 
+                    c.fecha_pago_espacio as fecha, 
                     (CASE 
                         WHEN l.tipo_tarifa = 'por_clase' THEN l.costo_tarifa 
                         ELSE l.costo_tarifa * (TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora)) / 3600)
                     END) * -1 as monto, 
                     'transferencia' as metodo_pago, 
-                    CONCAT('Pago Profesor: ', c.estado) as notas, 
+                    CONCAT('Costo de Espacio: ', c.estado) as notas, 
                     c.deleted_at, c.created_at, c.updated_at,
-                    'Pago Profesor' as tipo_abono_nombre, 
+                    'Costo de Espacio' as tipo_abono_nombre, 
                     NULL as categoria, 
                     p.nombre_completo as practicante_nombre,
                     NULL as fecha_vencimiento, 
                     l.nombre as lugar_nombre,
                     '[]' as schedules,
                     'egreso' as pago_tipo,
-                    NULL as tipo_abono_id
+                    NULL as tipo_abono_id,
+                    1 as es_profesor
                 FROM Clase c
                 JOIN Lugar l ON c.lugar_id = l.id
                 JOIN Practicante p ON c.profesor_id = p.id
-                WHERE c.deleted_at IS NULL AND c.pago_profesor_realizado = 1
+                WHERE c.deleted_at IS NULL AND c.pago_espacio_realizado = 1
+
+                UNION ALL
+
+                -- Expenses (Pago Cuota Social al Club - from PagoSocio)
+                SELECT 
+                    ps.id * -1000 as id, pr.id as practicante_id, NULL as abono_id, ps.id as pago_socio_id, 
+                    ps.mes_abono, l.id as lugar_id, 
+                    ps.fecha_pago as fecha, 
+                    ps.monto * -1 as monto, 
+                    'efectivo' as metodo_pago, 
+                    CONCAT('Pago Cuota Social al Club: ', ps.observaciones) as notas, 
+                    ps.deleted_at, ps.created_at, ps.updated_at,
+                    'Egreso Cuota Social (Club)' as tipo_abono_nombre, 
+                    NULL as categoria, 
+                    pr.nombre_completo as practicante_nombre,
+                    ps.fecha_vencimiento, 
+                    l.nombre as lugar_nombre,
+                    '[]' as schedules,
+                    'egreso' as pago_tipo,
+                    NULL as tipo_abono_id,
+                    pr.es_profesor
+                FROM PagoSocio ps
+                JOIN Socio s ON ps.socio_id = s.id
+                JOIN Practicante pr ON s.practicante_id = pr.id
+                JOIN Lugar l ON s.lugar_id = l.id
+                WHERE ps.deleted_at IS NULL AND ps.fecha_pago IS NOT NULL
             ) as global_pagos
             WHERE 1=1
         `;
@@ -133,13 +160,33 @@ export class Pago {
         }
 
         if (filters.mes) {
-            sql += ' AND MONTH(fecha) = ?';
-            params.push(filters.mes);
+            if (filters.filter_by_mes_abono && filters.anio) {
+                const monthNames = [
+                    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+                ];
+                const mesNombre = monthNames[filters.mes - 1];
+                const mesAbonoStr = `${mesNombre} ${filters.anio}`;
+                
+                // For incomes use mes_abono, for expenses use the actual payment date (MONTH(fecha))
+                sql += ' AND ((pago_tipo = \'ingreso\' AND mes_abono = ?) OR (pago_tipo = \'egreso\' AND MONTH(fecha) = ?))';
+                params.push(mesAbonoStr, filters.mes);
+            } else {
+                sql += ' AND MONTH(fecha) = ?';
+                params.push(filters.mes);
+            }
         }
 
         if (filters.anio) {
-            sql += ' AND YEAR(fecha) = ?';
-            params.push(filters.anio);
+            // If filter_by_mes_abono is active, the year is already included in mes_abono for incomes,
+            // but we still need YEAR(fecha) for egresos.
+            if (filters.filter_by_mes_abono && filters.mes) {
+                sql += ' AND ((pago_tipo = \'ingreso\') OR (pago_tipo = \'egreso\' AND YEAR(fecha) = ?))';
+                params.push(filters.anio);
+            } else {
+                sql += ' AND YEAR(fecha) = ?';
+                params.push(filters.anio);
+            }
         }
 
         if (filters.tipo_abono_id) {
@@ -152,7 +199,20 @@ export class Pago {
             params.push(filters.lugar_id);
         }
 
-        sql += ' ORDER BY fecha DESC, created_at DESC';
+        if (filters.exclude_cuota_social) {
+            // Exclude incomes (social fees) and specific expenses (social fee to club) for STUDENTS (non-professors)
+            sql += " AND NOT (es_profesor = 0 AND ( (pago_tipo = 'ingreso' AND categoria IS NULL) OR (tipo_abono_nombre = 'Egreso Cuota Social (Club)') ))";
+        }
+if (filters.exclude_profesor_pago) {
+    // Exclude incomes (social fees) and specific expenses (social fee to club) for PROFESSORS
+    sql += " AND NOT (es_profesor = 1 AND ( (pago_tipo = 'ingreso' AND categoria IS NULL) OR (tipo_abono_nombre = 'Egreso Cuota Social (Club)') ))";
+}
+
+if (filters.exclude_espacio_costo) {
+    sql += " AND tipo_abono_nombre != 'Costo de Espacio'";
+}
+
+sql += ' ORDER BY fecha DESC, created_at DESC';
 
         const [rows] = await pool.execute(sql, params);
         return rows.map(row => {

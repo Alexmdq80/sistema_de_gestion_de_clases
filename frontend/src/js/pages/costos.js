@@ -183,7 +183,7 @@ export class CostosPage {
         
         // Count all classes for total projection (including cancelled/suspended since they might have a cost)
         const totalCost = this.clases.reduce((acc, c) => acc + this.calculateClassCost(c), 0);
-        const totalPaid = this.clases.filter(c => c.pago_profesor_realizado).reduce((acc, c) => acc + this.calculateClassCost(c), 0);
+        const totalPaid = this.clases.filter(c => c.pago_espacio_realizado).reduce((acc, c) => acc + this.calculateClassCost(c), 0);
         const totalPending = totalCost - totalPaid;
 
         summaryDiv.innerHTML = `
@@ -196,12 +196,12 @@ export class CostosPage {
                 <div class="card bg-success text-white p-3 text-center">
                     <h4>Total Pagado</h4>
                     <h2 class="mb-0">$${totalPaid.toFixed(2)}</h2>
-                    <small>${this.clases.filter(c => c.pago_profesor_realizado).length} sesiones liquidadas</small>
+                    <small>${this.clases.filter(c => c.pago_espacio_realizado).length} sesiones liquidadas</small>
                 </div>
                 <div class="card bg-warning text-white p-3 text-center">
                     <h4>Pendiente</h4>
                     <h2 class="mb-0">$${totalPending.toFixed(2)}</h2>
-                    <small>${this.clases.filter(c => !c.pago_profesor_realizado).length} sesiones por pagar</small>
+                    <small>${this.clases.filter(c => !c.pago_espacio_realizado).length} sesiones por pagar</small>
                 </div>
             </div>
         `;
@@ -235,8 +235,8 @@ export class CostosPage {
                             const isSuspended = c.estado === 'suspendida';
                             
                             let estadoBadge = '';
-                            if (c.pago_profesor_realizado) {
-                                estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDate(c.fecha_pago_profesor)}">PAGADA</span>`;
+                            if (c.pago_espacio_realizado) {
+                                estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDate(c.fecha_pago_espacio)}">PAGADA</span>`;
                             } else {
                                 estadoBadge = '<span class="badge badge-warning">PENDIENTE</span>';
                             }
@@ -257,7 +257,7 @@ export class CostosPage {
                                     ${estadoBadge}
                                 </td>
                                 <td>
-                                    ${!c.pago_profesor_realizado ? `
+                                    ${!c.pago_espacio_realizado ? `
                                         <button class="btn btn-sm btn-success mark-paid-btn" data-id="${c.id}">Marcar Pagada</button>
                                     ` : `
                                         <button class="btn btn-sm btn-outline-secondary unmark-paid-btn" data-id="${c.id}">Anular Pago</button>
@@ -338,8 +338,8 @@ export class CostosPage {
     async submitPayment(id, isPaid, fecha, chargeOptions = {}) {
         try {
             await apiClient.put(`/asistencia/clases/${id}`, {
-                pago_profesor_realizado: isPaid,
-                fecha_pago_profesor: fecha,
+                pago_espacio_realizado: isPaid,
+                fecha_pago_espacio: fecha,
                 cobrar_salon: chargeOptions.cobrar_salon,
                 practicantes_ids: chargeOptions.practicantes_ids
             });

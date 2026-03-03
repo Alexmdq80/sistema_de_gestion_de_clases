@@ -605,9 +605,9 @@ export class PracticanteDetail {
     // Current month and next 2 months from baseDate
     for (let i = 0; i < 3; i++) {
         const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
-        const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-        options.push(`<option value="${value}">${label.charAt(0).toUpperCase() + label.slice(1)}</option>`);
+        const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+        options.push(`<option value="${capitalizedLabel}">${capitalizedLabel}</option>`);
     }
     
     return options.join('');
