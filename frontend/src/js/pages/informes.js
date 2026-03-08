@@ -352,11 +352,22 @@ export class InformesPage {
                                 const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
                                 const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
                                 
+                                const isCancelled = ['cancelada', 'suspendida'].includes(a.estado);
+                                const montoNum = parseFloat(a.monto || 0);
+                                
+                                let actividadDetalle = a.actividad_nombre;
+                                if (montoNum === 0 && isCancelled) {
+                                    const detalle = a.motivo_cancelacion || a.observaciones || '';
+                                    actividadDetalle += ` <br><small class="text-danger">(${a.estado.toUpperCase()}${detalle ? ': ' + detalle : ''})</small>`;
+                                } else if (isCancelled) {
+                                    actividadDetalle += ` <small class="text-danger">(${a.estado.toUpperCase()})</small>`;
+                                }
+
                                 return `
                                 <tr>
                                     <td>${capitalizedDay} ${dateStr} <small class="text-muted">(${a.hora.substring(0, 5)} hs)</small></td>
-                                    <td>${a.actividad_nombre}</td>
-                                    <td class="text-right">$${parseFloat(a.monto).toFixed(2)}</td>
+                                    <td>${actividadDetalle}</td>
+                                    <td class="text-right">$${montoNum.toFixed(2)}</td>
                                 </tr>
                             `}).join('')}
                             ${alquileres.length === 0 ? '<tr><td colspan="3" class="text-center text-muted">No se registraron alquileres</td></tr>' : ''}

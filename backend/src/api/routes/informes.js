@@ -1,7 +1,8 @@
 import express from 'express';
 import pool from '../../config/database.js';
-import { asyncHandler } from '../../utils/errors.js';
+import { asyncHandler, AppError } from '../../utils/errors.js';
 import { authenticateToken } from '../../middleware/auth.js';
+import PagoService from '../../services/pagoService.js';
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -34,9 +35,9 @@ router.get('/cuotas-sociales', asyncHandler(async (req, res) => {
             'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
         ];
-        const mesAbono = `${monthNames[mes - 1]} ${anio}`;
-        sql += ' AND ps.mes_abono = ?';
-        params.push(mesAbono);
+        const mesNombre = monthNames[mes - 1];
+        sql += ' AND ps.mes_abono LIKE ?';
+        params.push(`%${mesNombre}%${anio}%`);
     }
 
     if (lugar_id) {
@@ -102,8 +103,7 @@ router.get('/padron-socios-pagos', asyncHandler(async (req, res) => {
         LEFT JOIN PagoSocio ps ON ps.socio_id = s.id 
             AND ps.mes_abono = ? 
             AND ps.deleted_at IS NULL
-        -- Solo incluimos socios que tengan algún abono activo o asistencia en ese mes/lugar
-        -- O simplemente todos los socios registrados en esa sede (según preferencia usual de padrón)
+        -- Solo incluimos socios registrados en esa sede
         WHERE s.deleted_at IS NULL
     `;
     const params = [mesAbono];
@@ -171,7 +171,7 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
     const { mes, anio, lugar_id } = req.query;
     if (!lugar_id) throw new AppError('Debe seleccionar una sede para el informe consolidado', 400);
 
-    // 1. Obtener Cuotas Sociales (mismo filtro inclusivo de hijos)
+    // 1. Obtener Cuotas Sociales
     let sqlCuotas = `
         SELECT l.nombre as lugar_nombre, pr.nombre_completo, ps.monto, ps.mes_abono
         FROM PagoSocio ps
@@ -185,20 +185,31 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
 
     if (mes && anio) {
         const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-        paramsCuotas.push(`${monthNames[mes - 1]} ${anio}`);
-        sqlCuotas += ' AND ps.mes_abono = ?';
+        const mesNombre = monthNames[mes - 1];
+        sqlCuotas += ' AND ps.mes_abono LIKE ?';
+        paramsCuotas.push(`%${mesNombre}%${anio}%`);
     }
 
-    // 2. Obtener Alquileres (mismo filtro inclusivo)
+    // 2. Obtener Alquileres
     const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
     const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
     
     let sqlAlquileres = `
-        SELECT l.nombre as lugar_nombre, c.fecha, c.hora, c.hora_fin, a.nombre as actividad_nombre, c.monto_pago_espacio as monto
+        SELECT 
+            l.nombre as lugar_nombre, 
+            c.fecha, 
+            c.hora, 
+            c.hora_fin, 
+            a.nombre as actividad_nombre, 
+            c.monto_pago_espacio as monto,
+            c.estado,
+            c.observaciones,
+            c.motivo_cancelacion
         FROM Clase c
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id
-        WHERE c.deleted_at IS NULL AND c.pago_espacio_realizado = 1
+        WHERE c.deleted_at IS NULL 
+        AND (c.pago_espacio_realizado = 1 OR c.estado IN ('cancelada', 'suspendida'))
         AND (l.id = ? OR l.parent_id = ?)
         AND c.fecha >= ? AND c.fecha <= ?
     `;
@@ -223,78 +234,44 @@ router.get('/balance-mensual', asyncHandler(async (req, res) => {
     const { mes, anio, lugar_id, criterio = 'pago' } = req.query;
     if (!mes || !anio) throw new AppError('Mes y año son obligatorios', 400);
 
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const mesNombre = monthNames[mes - 1];
+    
+    // 1. Get all payments using the shared service (SAME LOGIC AS CASH FLOW UI)
+    const allPagos = await PagoService.getAllPayments({
+        mes: parseInt(mes, 10),
+        anio: parseInt(anio, 10),
+        lugar_id: lugar_id ? parseInt(lugar_id, 10) : undefined,
+        filter_by_mes_abono: criterio === 'mes'
+    });
+
+    let ingresosAbonos = 0;
+    let ingresosCuotas = 0;
+    let egresosAlquiler = 0;
+    let egresosCuotas = 0;
+
+    allPagos.forEach(p => {
+        const monto = Math.abs(parseFloat(p.monto));
+        if (p.pago_tipo === 'ingreso') {
+            // Social fee or abono?
+            if (p.tipo_abono_nombre === 'Recepción Cuota Social' || !p.categoria) {
+                ingresosCuotas += monto;
+            } else {
+                ingresosAbonos += monto;
+            }
+        } else if (p.pago_tipo === 'egreso') {
+            if (p.tipo_abono_nombre === 'Costo de Espacio') {
+                egresosAlquiler += monto;
+            } else if (p.tipo_abono_nombre === 'Egreso Cuota Social (Club)') {
+                egresosCuotas += monto;
+            }
+        }
+    });
+
+    // 2. Otros Movimientos de Caja (Ventas, Gastos Extra)
     const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
     const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
-    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    const mesAbonoStr = `${monthNames[mes - 1]} ${anio}`;
-
-    // 1. Ingresos por Abonos (Clases)
-    let sqlAbonos = `
-        SELECT SUM(p.monto) as total
-        FROM Pago p
-        JOIN Abono a ON p.abono_id = a.id
-        WHERE p.deleted_at IS NULL
-    `;
-    const paramsAbonos = [];
-    if (criterio === 'mes') {
-        sqlAbonos += ' AND a.mes_abono = ?';
-        paramsAbonos.push(mesAbonoStr);
-    } else {
-        sqlAbonos += ' AND p.fecha >= ? AND p.fecha <= ?';
-        paramsAbonos.push(firstDay, lastDay);
-    }
-    if (lugar_id) {
-        sqlAbonos += ' AND (a.lugar_id = ? OR EXISTS (SELECT 1 FROM Lugar WHERE id = a.lugar_id AND parent_id = ?))';
-        paramsAbonos.push(lugar_id, lugar_id);
-    }
-    const [[{ total: ingresosAbonos }]] = await pool.execute(sqlAbonos, paramsAbonos);
-
-    // 2. Cuotas Sociales Recibidas (Ingresos)
-    let sqlCuotas = `
-        SELECT SUM(p.monto) as total
-        FROM Pago p
-        JOIN PagoSocio ps ON p.pago_socio_id = ps.id
-        JOIN Socio s ON ps.socio_id = s.id
-        JOIN Lugar l ON s.lugar_id = l.id
-        WHERE p.deleted_at IS NULL
-    `;
-    const paramsCuotas = [];
-    if (criterio === 'mes') {
-        sqlCuotas += ' AND ps.mes_abono = ?';
-        paramsCuotas.push(mesAbonoStr);
-    } else {
-        sqlCuotas += ' AND p.fecha >= ? AND p.fecha <= ?';
-        paramsCuotas.push(firstDay, lastDay);
-    }
-    if (lugar_id) {
-        sqlCuotas += ' AND (l.id = ? OR l.parent_id = ?)';
-        paramsCuotas.push(lugar_id, lugar_id);
-    }
-    const [[{ total: ingresosCuotas }]] = await pool.execute(sqlCuotas, paramsCuotas);
-
-    // 2b. Egresos por Cuotas Sociales (Lo que el profesor pagó al club)
-    let sqlEgresosCuotas = `
-        SELECT SUM(ps.monto) as total
-        FROM PagoSocio ps
-        JOIN Socio s ON ps.socio_id = s.id
-        JOIN Lugar l ON s.lugar_id = l.id
-        WHERE ps.deleted_at IS NULL AND ps.estado_desconocido = 0
-    `;
-    const paramsEgresosCuotas = [];
-    if (criterio === 'mes') {
-        sqlEgresosCuotas += ' AND ps.mes_abono = ?';
-        paramsEgresosCuotas.push(mesAbonoStr);
-    } else {
-        sqlEgresosCuotas += ' AND ps.fecha_pago >= ? AND ps.fecha_pago <= ?';
-        paramsEgresosCuotas.push(firstDay, lastDay);
-    }
-    if (lugar_id) {
-        sqlEgresosCuotas += ' AND (l.id = ? OR l.parent_id = ?)';
-        paramsEgresosCuotas.push(lugar_id, lugar_id);
-    }
-    const [[{ total: egresosCuotas }]] = await pool.execute(sqlEgresosCuotas, paramsEgresosCuotas);
-
-    // 3. Otros Movimientos de Caja (Caja siempre se filtra por fecha real)
+    
     let sqlMovCaja = `
         SELECT tipo, SUM(monto) as total
         FROM MovimientoCaja
@@ -302,57 +279,39 @@ router.get('/balance-mensual', asyncHandler(async (req, res) => {
         GROUP BY tipo
     `;
     const [movimientos] = await pool.execute(sqlMovCaja, [firstDay, lastDay]);
-    const otrosIngresos = movimientos.find(m => m.tipo === 'ingreso')?.total || 0;
-    const otrosEgresos = movimientos.find(m => m.tipo === 'egreso')?.total || 0;
+    const otrosIngresos = parseFloat(movimientos.find(m => m.tipo === 'ingreso')?.total || 0);
+    const otrosEgresos = parseFloat(movimientos.find(m => m.tipo === 'egreso')?.total || 0);
 
-    // 4. Egresos por Alquiler de Espacios (Costo para el profesor)
-    let sqlAlquiler = `
-        SELECT SUM(monto_pago_espacio) as total
-        FROM Clase
-        WHERE deleted_at IS NULL AND pago_espacio_realizado = 1
-    `;
-    const paramsAlquiler = [];
-    if (criterio === 'mes') {
-        sqlAlquiler += ' AND fecha >= ? AND fecha <= ?'; // Clases que ocurrieron en el mes
-        paramsAlquiler.push(firstDay, lastDay);
-    } else {
-        sqlAlquiler += ' AND fecha_pago_espacio >= ? AND fecha_pago_espacio <= ?'; // Pagos realizados en el mes
-        paramsAlquiler.push(firstDay, lastDay);
-    }
-    if (lugar_id) {
-        sqlAlquiler += ' AND (lugar_id = ? OR EXISTS (SELECT 1 FROM Lugar WHERE id = Clase.lugar_id AND parent_id = ?))';
-        paramsAlquiler.push(lugar_id, lugar_id);
-    }
-    const [[{ total: egresosAlquiler }]] = await pool.execute(sqlAlquiler, paramsAlquiler);
-
-    // 5. Cálculo de Horas de Clase (Las horas trabajadas siempre son por mes calendario)
+    // 3. Total de Horas para Rentabilidad
     let sqlHoras = `
         SELECT SUM(TIME_TO_SEC(TIMEDIFF(hora_fin, hora))) / 3600 as horas
         FROM Clase
-        WHERE deleted_at IS NULL AND fecha >= ? AND fecha <= ?
+        WHERE deleted_at IS NULL 
+        AND estado NOT IN ('cancelada', 'suspendida')
+        AND fecha >= ? AND fecha <= ?
     `;
     const paramsHoras = [firstDay, lastDay];
     if (lugar_id) {
-        sqlHoras += ' AND (lugar_id = ? OR EXISTS (SELECT 1 FROM Lugar WHERE id = Clase.lugar_id AND parent_id = ?))';
+        sqlHoras += ' AND (lugar_id = ? OR lugar_id IN (SELECT id FROM Lugar WHERE parent_id = ?))';
         paramsHoras.push(lugar_id, lugar_id);
     }
     const [[{ horas: totalHoras }]] = await pool.execute(sqlHoras, paramsHoras);
 
-    const totalIngresos = parseFloat(ingresosAbonos || 0) + parseFloat(ingresosCuotas || 0) + parseFloat(otrosIngresos || 0);
-    const totalEgresos = parseFloat(egresosAlquiler || 0) + parseFloat(egresosCuotas || 0) + parseFloat(otrosEgresos || 0);
+    const totalIngresos = ingresosAbonos + ingresosCuotas + otrosIngresos;
+    const totalEgresos = egresosAlquiler + egresosCuotas + otrosEgresos;
     const balanceNeto = totalIngresos - totalEgresos;
     const gananciaPorHora = totalHoras > 0 ? balanceNeto / totalHoras : 0;
 
     res.json({
         data: {
-            periodo: mesAbonoStr,
+            periodo: `${mesNombre} ${anio}`,
             criterio,
-            ingresosAbonos: parseFloat(ingresosAbonos || 0),
-            ingresosCuotas: parseFloat(ingresosCuotas || 0),
-            otrosIngresos: parseFloat(otrosIngresos || 0),
-            egresosAlquiler: parseFloat(egresosAlquiler || 0),
-            egresosCuotas: parseFloat(egresosCuotas || 0),
-            otrosEgresos: parseFloat(otrosEgresos || 0),
+            ingresosAbonos,
+            ingresosCuotas,
+            otrosIngresos,
+            egresosAlquiler,
+            egresosCuotas,
+            otrosEgresos,
             totalIngresos,
             totalEgresos,
             balanceNeto,

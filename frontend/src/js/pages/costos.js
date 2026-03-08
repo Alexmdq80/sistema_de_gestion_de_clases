@@ -513,6 +513,12 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 const paid = this.getPaidAmount(c);
                                 const diff = expected - paid;
                                 
+                                const dateStr = formatDate(c.fecha);
+                                const [year, month, day] = dateStr.split('-');
+                                const dateObj = new Date(year, month - 1, day);
+                                const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
+                                const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+
                                 const isCancelled = c.estado === 'cancelada';
                                 const isSuspended = c.estado === 'suspendida';
                                 
@@ -525,7 +531,12 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
 
                                 return `
                                 <tr class="${isCancelled || isSuspended ? 'table-light text-muted' : ''}">
-                                    <td><strong>${formatDate(c.fecha)}</strong></td>
+                                    <td>
+                                        <div class="flex flex-col">
+                                            <strong>${capitalizedDay} ${dateStr}</strong>
+                                            <small class="text-muted">${c.hora.substring(0, 5)} hs</small>
+                                        </div>
+                                    </td>
                                     <td>${c.lugar_nombre}</td>
                                     <td>$${expected.toFixed(2)}</td>
                                     <td class="${c.pago_espacio_realizado ? 'text-success font-weight-bold' : 'text-muted'}">

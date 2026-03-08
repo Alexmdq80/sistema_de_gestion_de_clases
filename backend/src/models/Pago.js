@@ -167,11 +167,11 @@ export class Pago {
                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
                 ];
                 const mesNombre = monthNames[filters.mes - 1];
-                const mesAbonoStr = `${mesNombre} ${filters.anio}`;
-                
-                // For incomes use mes_abono, for expenses use the actual payment date (MONTH(fecha))
-                sql += ' AND ((pago_tipo = \'ingreso\' AND mes_abono = ?) OR (pago_tipo = \'egreso\' AND MONTH(fecha) = ?))';
-                params.push(mesAbonoStr, filters.mes);
+
+                // For incomes use mes_abono with LIKE to support both formats, for expenses use MONTH(fecha)
+                sql += ' AND ((pago_tipo = \'ingreso\' AND mes_abono LIKE ?) OR (pago_tipo = \'egreso\' AND MONTH(fecha) = ?))';
+                params.push(`%${mesNombre}%${filters.anio}%`, filters.mes);
+
             } else {
                 sql += ' AND MONTH(fecha) = ?';
                 params.push(filters.mes);
