@@ -98,11 +98,8 @@ export class Pago {
                 SELECT 
                     c.id * -1 as id, c.profesor_id as practicante_id, NULL as abono_id, NULL as pago_socio_id, 
                     NULL as mes_abono, c.lugar_id, 
-                    c.fecha_pago_espacio as fecha, 
-                    (CASE 
-                        WHEN l.tipo_tarifa = 'por_clase' THEN l.costo_tarifa 
-                        ELSE l.costo_tarifa * (TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora)) / 3600)
-                    END) * -1 as monto, 
+                    COALESCE(c.fecha_pago_espacio, c.fecha) as fecha, 
+                    IFNULL(c.monto_pago_espacio, 0) * -1 as monto, 
                     'transferencia' as metodo_pago, 
                     CONCAT('Costo de Espacio: ', c.estado) as notas, 
                     c.deleted_at, c.created_at, c.updated_at,
@@ -118,7 +115,7 @@ export class Pago {
                 FROM Clase c
                 JOIN Lugar l ON c.lugar_id = l.id
                 JOIN Practicante p ON c.profesor_id = p.id
-                WHERE c.deleted_at IS NULL AND c.pago_espacio_realizado = 1
+                WHERE c.deleted_at IS NULL AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0)
 
                 UNION ALL
 

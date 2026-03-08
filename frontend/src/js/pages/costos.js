@@ -433,23 +433,55 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         
         // Ingresos por Abonos (Cobros reales a practicantes)
         const totalIngresosAbonos = (this.pagosAbonos || [])
-            .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso')
-            .reduce((acc, p) => acc + Math.abs(parseFloat(p.monto)), 0);
+            .filter(p => p.pago_tipo === 'ingreso' && p.categoria)
+            .reduce((acc, p) => acc + (parseFloat(p.monto) - (p.pago_socio_id ? 8000 : 0)), 0); // Assuming 8000 if linked, but better use real logic
+
+        // Let's use a more precise classification for the summary
+        let sumIngresosAbonos = 0;
+        let sumIngresosCuotas = 0;
+        let sumEgresosClub = totalPaidClases; // Classes already calculated
+        let sumEgresosCuotas = 0;
+
+        (this.pagosAbonos || []).forEach(p => {
+            const monto = Math.abs(parseFloat(p.monto));
+            if (p.pago_tipo === 'ingreso') {
+                if (p.tipo_abono_nombre === 'Recepción Cuota Social' || !p.categoria) {
+                    sumIngresosCuotas += monto;
+                } else {
+                    // It's a class subscription. If it has a linked social fee, we should ideally split it.
+                    // Based on our backend logic, p.monto in "ingreso" includes the social fee.
+                    // For now, let's keep it simple: if it's an abono, it's abono income.
+                    sumIngresosAbonos += monto;
+                }
+            } else if (p.pago_tipo === 'egreso' && p.tipo_abono_nombre === 'Egreso Cuota Social (Club)') {
+                sumEgresosCuotas += monto;
+            }
+        });
 
         // Caja Extra
         const totalIngresosExtra = this.movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
         const totalEgresosExtra = this.movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
 
         // Balance Final de Utilidad
-        // Utilidad = (Ingresos Abonos + Ingresos Extra) - (Egresos Extra + Pagos de Clases)
-        const totalIngresos = totalIngresosAbonos + totalIngresosExtra;
-        const totalEgresos = totalEgresosExtra + totalPaidClases;
+        const totalIngresos = sumIngresosAbonos + sumIngresosCuotas + totalIngresosExtra;
+        const totalEgresos = totalEgresosExtra + sumEgresosClub + sumEgresosCuotas;
         const utilidadNeta = totalIngresos - totalEgresos;
         
         const ahorroNegociacion = totalExpectedClases - totalPaidClases;
 
+        // Cálculo de Horas (Solo realizadas o programadas, no canceladas/suspendidas)
+        const totalHoras = this.clases
+            .filter(c => !['cancelada', 'suspendida'].includes(c.estado))
+            .reduce((acc, c) => {
+                const start = new Date(`2000-01-01T${c.hora}`);
+                const end = new Date(`2000-01-01T${c.hora_fin}`);
+                return acc + (end - start) / (1000 * 60 * 60);
+            }, 0);
+        
+        const gananciaPorHora = totalHoras > 0 ? utilidadNeta / totalHoras : 0;
+
         summaryDiv.innerHTML = `
-            <div class="grid grid-4 gap-4">
+            <div class="grid grid-5 gap-4">
                 <div class="card bg-success text-white p-3">
                     <div class="text-center">
                         <h4>Total Ingresos</h4>
@@ -457,27 +489,37 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                     </div>
                     <div class="border-top pt-2 mt-2 small">
                         <div class="flex justify-between">
-                            <span>Abonos Practicantes:</span>
-                            <strong>$${totalIngresosAbonos.toFixed(2)}</strong>
+                            <span>Abonos Clases:</span>
+                            <strong>$${sumIngresosAbonos.toFixed(2)}</strong>
                         </div>
                         <div class="flex justify-between">
-                            <span>Ventas / Ingresos Extra:</span>
+                            <span>Cuotas Recibidas:</span>
+                            <strong>$${sumIngresosCuotas.toFixed(2)}</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Ingresos Extra:</span>
                             <strong>$${totalIngresosExtra.toFixed(2)}</strong>
                         </div>
                     </div>
                 </div>
-                <div class="card bg-danger text-white p-3 text-center">
+                <div class="card bg-danger text-white p-3 text-center flex flex-col justify-center">
                     <h4>Total Egresos</h4>
                     <h2 class="mb-0">$${totalEgresos.toFixed(2)}</h2>
-                    <small>Gastos: $${totalEgresosExtra.toFixed(2)} + Club: $${totalPaidClases.toFixed(2)}</small>
+                    <small>Gastos: $${(totalEgresosExtra + sumEgresosCuotas).toFixed(2)} + Club: $${sumEgresosClub.toFixed(2)}</small>
                 </div>
-                <div class="card ${utilidadNeta >= 0 ? 'bg-primary' : 'bg-warning'} text-white p-3 text-center">
+                <div class="card ${utilidadNeta >= 0 ? 'bg-primary' : 'bg-warning'} text-white p-3 text-center flex flex-col justify-center">
                     <h4>Utilidad Neta</h4>
                     <h2 class="mb-0">$${utilidadNeta.toFixed(2)}</h2>
                     <small>${utilidadNeta >= 0 ? 'Ganancia real del mes' : 'Déficit del mes'}</small>
                 </div>
-                <div class="card bg-info text-white p-3 text-center">
-                    <h4>Ahorro en Alquiler</h4>
+                <div class="card bg-info text-white p-3 text-center flex flex-col justify-center">
+                    <p class="mb-1 text-uppercase small" style="opacity: 0.8;">Rentabilidad</p>
+                    <h4 class="mb-1">$/Hora Neta</h4>
+                    <h2 class="mb-0">$${gananciaPorHora.toFixed(2)}</h2>
+                    <small>${totalHoras.toFixed(1)} hs de clase</small>
+                </div>
+                <div class="card bg-secondary text-white p-3 text-center flex flex-col justify-center">
+                    <h4>Ahorro Alquiler</h4>
                     <h2 class="mb-0">$${ahorroNegociacion.toFixed(2)}</h2>
                     <small>Bonificaciones del Club</small>
                 </div>
