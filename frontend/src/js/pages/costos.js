@@ -18,8 +18,17 @@ export class CostosPage {
     }
 
     updateFiltersFromMonthYear() {
-        const firstDay = new Date(this.selectedYear, this.selectedMonth, 1);
-        const lastDay = new Date(this.selectedYear, this.selectedMonth + 1, 0);
+        let firstDay, lastDay;
+
+        if (this.selectedMonth === 'all') {
+            // Rango de todo el año
+            firstDay = new Date(this.selectedYear, 0, 1);
+            lastDay = new Date(this.selectedYear, 11, 31, 23, 59, 59);
+        } else {
+            // Rango del mes específico
+            firstDay = new Date(this.selectedYear, this.selectedMonth, 1);
+            lastDay = new Date(this.selectedYear, parseInt(this.selectedMonth) + 1, 0);
+        }
         
         const formatDateStr = (date) => {
             const y = date.getFullYear();
@@ -40,32 +49,44 @@ export class CostosPage {
 
         this.container.innerHTML = `
             <div class="page-header">
-                <h1>Gestión de Costos de Clases</h1>
+                <h1>Flujo de Caja</h1>
             </div>
 
             <div class="filters-bar mb-4 p-3 bg-light border rounded">
-                <div class="form-row align-items-end">
-                    <div class="form-group col-md-4">
-                        <label for="costo-month">Mes</label>
-                        <select class="form-control" id="costo-month">
+                <div class="form-row align-items-center">
+                    <div class="form-group col-md-3 mb-md-0">
+                        <select class="form-control" id="costo-month" title="Seleccionar Mes">
+                            <option value="all" ${this.selectedMonth === 'all' ? 'selected' : ''}>Todos los meses</option>
                             ${months.map((m, i) => `<option value="${i}" ${this.selectedMonth === i ? 'selected' : ''}>${m}</option>`).join('')}
                         </select>
                     </div>
-                    <div class="form-group col-md-3">
-                        <label for="costo-year">Año</label>
-                        <input type="number" class="form-control" id="costo-year" value="${this.selectedYear}">
+                    <div class="form-group col-md-2 mb-md-0">
+                        <input type="number" class="form-control" id="costo-year" value="${this.selectedYear}" placeholder="Año">
                     </div>
-                    <div class="form-group col-md-3">
-                        <button id="costo-filter-btn" class="btn btn-primary btn-block">Aplicar Filtro</button>
+                    <div class="form-group col-md-3 mb-md-0">
+                        <button id="costo-filter-btn" class="btn btn-primary btn-block">
+                            Aplicar Filtro
+                        </button>
                     </div>
-                    <div class="form-group col-md-2">
-                        <button id="costo-refresh-btn" class="btn btn-outline-secondary btn-block">Actualizar</button>
+                    <div class="form-group col-md-2 mb-md-0">
+                        <button id="add-movimiento-btn" class="btn btn-success btn-block" title="Nuevo Movimiento">
+                            <i class="fas fa-plus"></i> + Movimiento
+                        </button>
                     </div>
-                    <div class="form-group col-md-1">
-                        <button id="add-movimiento-btn" class="btn btn-success btn-block" title="Nuevo Movimiento">+</button>
+                    <div class="form-group col-md-2 mb-md-0">
+                        <button id="manage-cats-btn" class="btn btn-outline-info btn-block" title="Configurar Categorías">
+                            <i class="fas fa-cog"></i> ⚙ Categorías
+                        </button>
                     </div>
-                    <div class="form-group col-md-1">
-                        <button id="manage-cats-btn" class="btn btn-outline-info btn-block" title="Configurar Categorías">⚙</button>
+                </div>
+                <div class="form-row mt-2">
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="filter-by-mes-abono-caja" ${this.filterByMesAbono ? 'checked' : ''}>
+                            <label class="form-check-label small text-muted" for="filter-by-mes-abono-caja">
+                                <i class="fas fa-info-circle"></i> Usar <strong>Mes de Abono</strong> para filtrar ingresos (en lugar de fecha de cobro real)
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -200,16 +221,17 @@ export class CostosPage {
 
     attachEvents() {
         this.container.querySelector('#costo-filter-btn').onclick = () => {
-            this.selectedMonth = parseInt(this.container.querySelector('#costo-month').value, 10);
+            const monthVal = this.container.querySelector('#costo-month').value;
+            this.selectedMonth = monthVal === 'all' ? 'all' : parseInt(monthVal, 10);
             this.selectedYear = parseInt(this.container.querySelector('#costo-year').value, 10);
+            this.filterByMesAbono = this.container.querySelector('#filter-by-mes-abono-caja').checked;
             this.updateFiltersFromMonthYear();
             this.loadData();
         };
-this.container.querySelector('#costo-refresh-btn').onclick = () => this.loadData();
 
-// Movimiento Caja Modal
-const movModal = this.container.querySelector('#movimiento-modal');
-const movCatSelect = movModal.querySelector('#mov-categoria');
+        // Movimiento Caja Modal
+        const movModal = this.container.querySelector('#movimiento-modal');
+        const movCatSelect = movModal.querySelector('#mov-categoria');
 
 this.container.querySelector('#add-movimiento-btn').onclick = () => {
     // Populate categories dynamically
@@ -310,15 +332,32 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
     async loadData() {
         const content = this.container.querySelector('#costos-content');
         try {
+            // Parámetros para pagos: si filtramos por mes de abono, usamos mes/año. Si no, rango de fechas.
+            const pagosParams = { 
+                filter_by_mes_abono: this.filterByMesAbono || false
+            };
+
+            if (this.filterByMesAbono) {
+                if (this.selectedMonth !== 'all') {
+                    pagosParams.mes = this.selectedMonth + 1; // Backend espera 1-12
+                }
+                pagosParams.anio = this.selectedYear;
+            } else {
+                pagosParams.fecha_inicio = this.filters.fecha_inicio;
+                pagosParams.fecha_fin = this.filters.fecha_fin;
+            }
+
             const results = await Promise.allSettled([
                 apiClient.get('/asistencia/clases', this.filters),
                 apiClient.get('/caja', this.filters),
-                apiClient.get('/categorias-caja')
+                apiClient.get('/categorias-caja'),
+                apiClient.get('/pagos', pagosParams)
             ]);
             
             this.clases = results[0].status === 'fulfilled' ? results[0].value.data : [];
             this.movimientos = results[1].status === 'fulfilled' ? results[1].value.data : [];
             this.categorias = results[2].status === 'fulfilled' ? (results[2].value.data || []) : [];
+            this.pagosAbonos = results[3].status === 'fulfilled' ? results[3].value.data : [];
             
             if (results.some(r => r.status === 'rejected')) {
                 console.error('Some requests failed:', results.filter(r => r.status === 'rejected'));
@@ -378,45 +417,69 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         });
     }
 
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     renderSummary() {
         const summaryDiv = this.container.querySelector('#costos-summary');
         
-        // Clases
-        const totalExpectedClases = this.clases.reduce((acc, c) => acc + this.getExpectedCost(c), 0);
+        // Clases (Egresos al club)
         const totalPaidClases = this.clases.reduce((acc, c) => acc + this.getPaidAmount(c), 0);
+        const totalExpectedClases = this.clases.reduce((acc, c) => acc + this.getExpectedCost(c), 0);
         
+        // Ingresos por Abonos (Cobros reales a practicantes)
+        const totalIngresosAbonos = (this.pagosAbonos || [])
+            .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso')
+            .reduce((acc, p) => acc + Math.abs(parseFloat(p.monto)), 0);
+
         // Caja Extra
         const totalIngresosExtra = this.movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
         const totalEgresosExtra = this.movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
 
         // Balance Final de Utilidad
-        // Utilidad = Ingresos Extra - Egresos Extra - Pagos de Clases
-        const utilidadNeta = totalIngresosExtra - totalEgresosExtra - totalPaidClases;
+        // Utilidad = (Ingresos Abonos + Ingresos Extra) - (Egresos Extra + Pagos de Clases)
+        const totalIngresos = totalIngresosAbonos + totalIngresosExtra;
+        const totalEgresos = totalEgresosExtra + totalPaidClases;
+        const utilidadNeta = totalIngresos - totalEgresos;
         
-        // Diferencia de negociación con el club
         const ahorroNegociacion = totalExpectedClases - totalPaidClases;
 
         summaryDiv.innerHTML = `
             <div class="grid grid-4 gap-4">
-                <div class="card bg-success text-white p-3 text-center">
-                    <h4>Ingresos Extra</h4>
-                    <h2 class="mb-0">$${totalIngresosExtra.toFixed(2)}</h2>
-                    <small>Ventas, aportes, etc.</small>
+                <div class="card bg-success text-white p-3">
+                    <div class="text-center">
+                        <h4>Total Ingresos</h4>
+                        <h2 class="mb-2">$${totalIngresos.toFixed(2)}</h2>
+                    </div>
+                    <div class="border-top pt-2 mt-2 small">
+                        <div class="flex justify-between">
+                            <span>Abonos Practicantes:</span>
+                            <strong>$${totalIngresosAbonos.toFixed(2)}</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Ventas / Ingresos Extra:</span>
+                            <strong>$${totalIngresosExtra.toFixed(2)}</strong>
+                        </div>
+                    </div>
                 </div>
                 <div class="card bg-danger text-white p-3 text-center">
-                    <h4>Egresos (Gastos + Club)</h4>
-                    <h2 class="mb-0">$${(totalEgresosExtra + totalPaidClases).toFixed(2)}</h2>
-                    <small>Gastos varios y alquiler</small>
+                    <h4>Total Egresos</h4>
+                    <h2 class="mb-0">$${totalEgresos.toFixed(2)}</h2>
+                    <small>Gastos: $${totalEgresosExtra.toFixed(2)} + Club: $${totalPaidClases.toFixed(2)}</small>
                 </div>
                 <div class="card ${utilidadNeta >= 0 ? 'bg-primary' : 'bg-warning'} text-white p-3 text-center">
                     <h4>Utilidad Neta</h4>
                     <h2 class="mb-0">$${utilidadNeta.toFixed(2)}</h2>
-                    <small>${utilidadNeta >= 0 ? 'Ganancia del mes' : 'Déficit del mes'}</small>
+                    <small>${utilidadNeta >= 0 ? 'Ganancia real del mes' : 'Déficit del mes'}</small>
                 </div>
                 <div class="card bg-info text-white p-3 text-center">
                     <h4>Ahorro en Alquiler</h4>
                     <h2 class="mb-0">$${ahorroNegociacion.toFixed(2)}</h2>
-                    <small>Diferencia vs Tarifa Base</small>
+                    <small>Bonificaciones del Club</small>
                 </div>
             </div>
         `;
@@ -484,6 +547,39 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                     </td>
                                 </tr>
                             `;}).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="abonos-section mb-5">
+                <h3>Ingresos por Abonos de Practicantes</h3>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Fecha Cobro</th>
+                                <th>Practicante</th>
+                                <th>Concepto / Mes</th>
+                                <th>Sede</th>
+                                <th>Método</th>
+                                <th class="text-right">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(this.pagosAbonos || [])
+                                .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso')
+                                .map(p => `
+                                <tr>
+                                    <td>${formatDate(p.fecha)}</td>
+                                    <td><strong>${this.escapeHtml(p.practicante_nombre)}</strong></td>
+                                    <td>${this.escapeHtml(p.tipo_abono_nombre || 'Cuota Social')} <small class="text-muted">(${p.mes_abono})</small></td>
+                                    <td><small>${this.escapeHtml(p.lugar_nombre || '-')}</small></td>
+                                    <td>${p.metodo_pago || '-'}</td>
+                                    <td class="text-right text-success font-weight-bold">$${parseFloat(p.monto).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                            ${this.pagosAbonos.length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No hay cobros de abonos en este periodo.</td></tr>' : ''}
                         </tbody>
                     </table>
                 </div>

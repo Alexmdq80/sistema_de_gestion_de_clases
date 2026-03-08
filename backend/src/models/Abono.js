@@ -15,6 +15,7 @@ export class Abono {
         this.lugar_nombre = data.lugar_nombre || null; // From join
         this.estado = data.estado || 'activo';
         this.cantidad = data.cantidad || 1;
+        this.monto_pactado = data.monto_pactado !== undefined ? parseFloat(data.monto_pactado) : null;
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
         this.deleted_at = data.deleted_at || null;
@@ -30,8 +31,8 @@ export class Abono {
     static async create(data, connection = null, userId = null) {
         const sql = `
             INSERT INTO Abono (
-                practicante_id, tipo_abono_id, fecha_inicio, fecha_vencimiento, mes_abono, lugar_id, estado, cantidad
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                practicante_id, tipo_abono_id, fecha_inicio, fecha_vencimiento, mes_abono, lugar_id, estado, cantidad, monto_pactado
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
@@ -42,7 +43,8 @@ export class Abono {
             data.mes_abono || null,
             data.lugar_id || null,
             data.estado || 'activo',
-            data.cantidad !== undefined && data.cantidad !== null ? parseInt(data.cantidad, 10) : 1
+            data.cantidad !== undefined && data.cantidad !== null ? parseInt(data.cantidad, 10) : 1,
+            data.monto_pactado !== undefined ? data.monto_pactado : null
         ];
 
         const executor = connection || pool;
@@ -127,6 +129,28 @@ export class Abono {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Get balance for an abono (monto_pactado - sum of related payments)
+     * @param {number} id - Abono ID
+     * @param {Object} [connection] - Database connection
+     * @returns {Promise<Object>}
+     */
+    static async getBalance(id, connection = null) {
+        const sql = `
+            SELECT 
+                a.monto_pactado,
+                IFNULL(SUM(p.monto), 0) as total_pagado,
+                (IFNULL(a.monto_pactado, 0) - IFNULL(SUM(p.monto), 0)) as saldo_pendiente
+            FROM Abono a
+            LEFT JOIN Pago p ON a.id = p.abono_id AND p.deleted_at IS NULL
+            WHERE a.id = ?
+            GROUP BY a.id
+        `;
+        const executor = connection || pool;
+        const [rows] = await executor.execute(sql, [id]);
+        return rows.length ? rows[0] : { monto_pactado: 0, total_pagado: 0, saldo_pendiente: 0 };
     }
 
     /**
@@ -217,6 +241,7 @@ export class Abono {
             lugar_nombre: this.lugar_nombre,
             estado: this.estado,
             cantidad: this.cantidad,
+            monto_pactado: this.monto_pactado,
             created_at: this.created_at,
             updated_at: this.updated_at,
             deleted_at: this.deleted_at

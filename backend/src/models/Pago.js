@@ -21,6 +21,7 @@ export class Pago {
         this.lugar_nombre = data.lugar_nombre || null; 
         this.fecha_vencimiento = data.fecha_vencimiento || null; 
         this.horarios_ids = data.horarios_ids || []; 
+        this.pago_tipo = data.pago_tipo || 'ingreso'; 
         this.deleted_at = data.deleted_at || null;
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
@@ -197,6 +198,16 @@ export class Pago {
         if (filters.lugar_id) {
             sql += ' AND lugar_id = ?';
             params.push(filters.lugar_id);
+        }
+
+        if (filters.fecha_inicio) {
+            sql += ' AND fecha >= ?';
+            params.push(filters.fecha_inicio);
+        }
+
+        if (filters.fecha_fin) {
+            sql += ' AND fecha <= ?';
+            params.push(filters.fecha_fin);
         }
 
         if (filters.exclude_cuota_social) {
@@ -407,6 +418,7 @@ sql += ' ORDER BY fecha DESC, created_at DESC';
             lugar_nombre: this.lugar_nombre,
             fecha_vencimiento: this.fecha_vencimiento,
             horarios_ids: this.horarios_ids,
+            pago_tipo: this.pago_tipo,
             deleted_at: this.deleted_at,
             created_at: this.created_at,
             updated_at: this.updated_at

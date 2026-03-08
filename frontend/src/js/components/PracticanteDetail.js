@@ -825,7 +825,7 @@ export class PracticanteDetail {
     const historyContainer = this.container.querySelector('#payment-history-content');
     if (!historyContainer) return;
 
-    historyContainer.innerHTML = '<div class="spinner"></div>'; // Show spinner
+    historyContainer.innerHTML = '<div class="spinner"></div>';
 
     try {
         const response = await makeRequest(`/practicantes/${this.practicante.id}/pagos`, 'GET', null, true);
@@ -833,44 +833,67 @@ export class PracticanteDetail {
         this.currentPayments = pagos || [];
 
         if (pagos && pagos.length > 0) {
+            // Agrupar pagos por abono para calcular saldos
+            const abonosMap = new Map();
+            for (const p of pagos) {
+                if (p.abono_id) {
+                    if (!abonosMap.has(p.abono_id)) {
+                        // Obtener balance del abono desde el servidor
+                        const balanceRes = await makeRequest(`/pagos/abono/${p.abono_id}/balance`, 'GET', null, true);
+                        abonosMap.set(p.abono_id, balanceRes.data);
+                    }
+                }
+            }
+
             historyContainer.innerHTML = `
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Tipo Abono</th>
+                            <th>Concepto</th>
                             <th>Monto</th>
-                            <th>Fecha Pago</th>
-                            <th>Vencimiento</th>
+                            <th>Fecha</th>
+                            <th>Estado / Saldo</th>
                             <th>Lugar</th>
-                            <th>Método</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${pagos.map(pago => {
                             const mesText = pago.mes_abono ? ` (${pago.mes_abono})` : '';
-                            const isVencimientoReal = pago.fecha_vencimiento && !pago.fecha_vencimiento.startsWith('2099');
                             const isCuotaSocial = !pago.tipo_abono_nombre || pago.tipo_abono_nombre === 'Recepción Cuota Social';
                             
-                            let vencimientoHtml = '';
-                            if (isVencimientoReal) {
-                                vencimientoHtml = formatDateReadable(pago.fecha_vencimiento);
-                            } else if (isCuotaSocial) {
-                                vencimientoHtml = '<em class="text-muted">a determinar...</em>';
-                            } else {
-                                vencimientoHtml = '<em class="text-muted">Flexible</em>';
+                            let balanceHtml = '<span class="badge badge-success">Pagado</span>';
+                            let actionsHtml = `<button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}" title="Eliminar"><i class="fas fa-trash"></i></button>`;
+
+                            if (pago.abono_id && abonosMap.has(pago.abono_id)) {
+                                const balance = abonosMap.get(pago.abono_id);
+                                if (parseFloat(balance.saldo_pendiente) > 0.01) {
+                                    balanceHtml = `<span class="text-danger" style="font-weight:bold;">Debe $${parseFloat(balance.saldo_pendiente).toFixed(2)}</span>`;
+                                    // Solo mostrar botón de "Abonar" en el pago más reciente del abono para no duplicar botones
+                                    const esUltimoPago = pagos.find(pg => pg.abono_id === pago.abono_id).id === pago.id;
+                                    if (esUltimoPago) {
+                                        actionsHtml = `
+                                            <button class="btn btn-primary btn-sm add-partial-btn" data-abono-id="${pago.abono_id}" data-saldo="${balance.saldo_pendiente}" title="Registrar pago de saldo">Abonar</button>
+                                            ${actionsHtml}
+                                        `;
+                                    }
+                                } else if (parseFloat(balance.saldo_pendiente) < -0.01) {
+                                    balanceHtml = `<span class="text-info">Saldo a favor: $${Math.abs(balance.saldo_pendiente).toFixed(2)}</span>`;
+                                }
                             }
 
                             return `
                                 <tr>
-                                    <td>${this.escapeHtml(pago.tipo_abono_nombre || 'Recepción Cuota Social')}${mesText}</td>
+                                    <td>
+                                        <strong>${this.escapeHtml(pago.tipo_abono_nombre || 'Cuota Social')}</strong>${mesText}
+                                        ${pago.notas ? `<br><small class="text-muted">${this.escapeHtml(pago.notas)}</small>` : ''}
+                                    </td>
                                     <td>$${parseFloat(pago.monto).toFixed(2)}</td>
                                     <td>${formatDateReadable(pago.fecha)}</td>
-                                    <td>${vencimientoHtml}</td>
-                                    <td>${this.escapeHtml(pago.lugar_nombre || '-')}</td>
-                                    <td>${pago.metodo_pago || '-'}</td>
+                                    <td>${balanceHtml}</td>
+                                    <td><small>${this.escapeHtml(pago.lugar_nombre || '-')}</small></td>
                                     <td>
-                                        <button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}">Eliminar</button>
+                                        <div class="btn-group">${actionsHtml}</div>
                                     </td>
                                 </tr>
                             `;
@@ -878,13 +901,19 @@ export class PracticanteDetail {
                     </tbody>
                 </table>
             `;
-            // Attach events to buttons
+            
+            // Attach events
             historyContainer.querySelectorAll('.delete-pago-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const pagoId = e.target.getAttribute('data-id');
-                    const pago = pagos.find(p => p.id == pagoId);
+                btn.onclick = () => {
+                    const pago = pagos.find(p => p.id == btn.dataset.id);
                     this.handleDeletePago(pago);
-                });
+                };
+            });
+
+            historyContainer.querySelectorAll('.add-partial-btn').forEach(btn => {
+                btn.onclick = () => {
+                    this.openPartialPaymentModal(btn.dataset.abonoId, btn.dataset.saldo);
+                };
             });
         } else {
             historyContainer.innerHTML = '<p class="text-muted">No hay historial de pagos para este practicante.</p>';

@@ -44,6 +44,7 @@ import usersRoutes from './routes/users.js'; // Import users routes
 import deudasRoutes from './routes/deudas.js'; // Import deudas routes
 import cajaRoutes from './routes/caja.js'; // Import caja routes
 import categoriasCajaRoutes from './routes/categoriasCaja.js'; // Import categorias caja routes
+import informesRoutes from './routes/informes.js'; // Import informes routes
 
 app.use('/api', apiRoutes);
 app.use('/api/practicantes', practicantesRoutes);
@@ -60,6 +61,7 @@ app.use('/api/users', usersRoutes); // Mount users routes
 app.use('/api/deudas', deudasRoutes); // Mount deudas routes
 app.use('/api/caja', cajaRoutes); // Mount caja routes
 app.use('/api/categorias-caja', categoriasCajaRoutes); // Mount categorias caja routes
+app.use('/api/informes', informesRoutes); // Mount informes routes
 
 // 404 handler
 app.use((req, res) => {

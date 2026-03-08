@@ -86,7 +86,8 @@ export class PagoService {
                 mes_abono: extraData.mes_abono || null,
                 lugar_id: extraData.lugar_id || tipoAbono.lugar_id,
                 estado: 'activo',
-                cantidad: cantidad
+                cantidad: cantidad,
+                monto_pactado: extraData.monto_pactado !== undefined ? parseFloat(extraData.monto_pactado) : (tipoAbono.precio || 0) * cantidad
             };
             
             // Pass userId to create method for history
@@ -148,6 +149,33 @@ export class PagoService {
         } finally {
             connection.release();
         }
+    }
+
+    /**
+     * Add a payment to an existing abono (partial payment)
+     * @param {number} abonoId 
+     * @param {number} monto 
+     * @param {string} metodoPago 
+     * @param {string} fecha 
+     * @param {string} notas 
+     * @param {number} userId 
+     */
+    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId) {
+        const abono = await Abono.findById(abonoId);
+        if (!abono) throw new AppError('Abono no encontrado', 404);
+
+        const pagoData = {
+            practicante_id: abono.practicante_id,
+            abono_id: abono.id,
+            mes_abono: abono.mes_abono,
+            lugar_id: abono.lugar_id,
+            fecha: fecha || new Date().toISOString().split('T')[0],
+            monto: monto,
+            metodo_pago: metodoPago,
+            notas: `[PAGO ADICIONAL] ${notas || ''}`.trim()
+        };
+
+        return await Pago.create(pagoData, null, userId);
     }
 
     /**

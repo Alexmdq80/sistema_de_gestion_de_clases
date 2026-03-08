@@ -13,7 +13,7 @@ router.use(authenticateToken);
  * Get all payments with optional filtering
  */
 router.get('/', asyncHandler(async (req, res) => {
-    const { search = '', categoria = '', mes, anio, tipo_abono_id, lugar_id, filter_by_mes_abono, exclude_cuota_social, exclude_profesor_pago, exclude_espacio_costo } = req.query;
+    const { search = '', categoria = '', mes, anio, tipo_abono_id, lugar_id, filter_by_mes_abono, exclude_cuota_social, exclude_profesor_pago, exclude_espacio_costo, fecha_inicio, fecha_fin } = req.query;
     const pagos = await PagoService.getAllPayments({ 
         search, 
         categoria,
@@ -24,12 +24,50 @@ router.get('/', asyncHandler(async (req, res) => {
         filter_by_mes_abono: filter_by_mes_abono === 'true',
         exclude_cuota_social: exclude_cuota_social === 'true',
         exclude_profesor_pago: exclude_profesor_pago === 'true',
-        exclude_espacio_costo: exclude_espacio_costo === 'true'
+        exclude_espacio_costo: exclude_espacio_costo === 'true',
+        fecha_inicio,
+        fecha_fin
     });
     res.status(200).json({ data: pagos });
-}));
-/**
- * PUT /api/pagos/:id
+    }));
+
+    /**
+    * GET /api/pagos/abono/:id/balance
+    * Get balance of an abono
+    */
+    router.get('/abono/:id/balance', asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const { Abono } = await import('../../models/Abono.js');
+    const balance = await Abono.getBalance(id);
+    res.json({ data: balance });
+    }));
+
+    /**
+    * POST /api/pagos/partial
+    * Register an additional payment for an existing abono
+    */
+    router.post('/partial', asyncHandler(async (req, res) => {
+    const { abono_id, monto, metodo_pago, fecha, notas } = req.body;
+    const userId = req.user.userId;
+
+    if (!abono_id || !monto) {
+        throw new AppError('Abono ID y Monto son obligatorios', 400);
+    }
+
+    const pago = await PagoService.addPaymentToAbono(
+        parseInt(abono_id, 10),
+        parseFloat(monto),
+        metodo_pago,
+        fecha,
+        notas,
+        userId
+    );
+
+    res.status(201).json({ data: pago });
+    }));
+
+    /**
+    * PUT /api/pagos/:id
  * Update a payment's details
  */
 router.put('/:id', asyncHandler(async (req, res) => {
