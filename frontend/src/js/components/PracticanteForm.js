@@ -45,6 +45,18 @@ export class PracticanteForm {
             </div>
 
             <div class="form-group">
+              <label for="dni">DNI (Documento Nacional de Identidad)</label>
+              <input 
+                type="text" 
+                id="dni" 
+                name="dni" 
+                class="form-control"
+                value="${practicante.dni || ''}"
+                placeholder="Ej: 12.345.678"
+              />
+            </div>
+
+            <div class="form-group">
               <label for="fecha_nacimiento">Fecha de Nacimiento</label>
               <input 
                 type="date" 

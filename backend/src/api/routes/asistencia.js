@@ -126,16 +126,27 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         throw new AppError('Solo se puede cerrar una clase que ya ha sido marcada como "Realizada"', 400);
     }
 
-    // Handle salon cost charging if requested (only when marking as paid)
-    if (data.pago_espacio_realizado === true && data.cobrar_salon && (clase.estado === 'cancelada' || clase.estado === 'suspendida')) {
+    // Handle salon cost charging if requested
+    // Logic: If it's being marked as paid NOW, or if it was already paid but we are explicitly 
+    // sending cobrar_salon (for edits), we process debts.
+    const isNewPayment = data.pago_espacio_realizado === true && clase.pago_espacio_realizado === false;
+    const isEditingPaymentWithCharge = data.pago_espacio_realizado === true && data.cobrar_salon === true;
+
+    if ((isNewPayment || isEditingPaymentWithCharge) && data.cobrar_salon && (clase.estado === 'cancelada' || clase.estado === 'suspendida')) {
+        // First, cancel any previous debts for this class to avoid duplicates if editing
+        await Deuda.cancelByClaseId(clase.id, userId);
+
         const lugar = await Lugar.findById(clase.lugar_id);
-        if (lugar && lugar.costo_tarifa > 0 && data.practicantes_ids && Array.isArray(data.practicantes_ids)) {
+        const montoACobrar = data.monto_pago_espacio !== undefined ? parseFloat(data.monto_pago_espacio) : (lugar ? lugar.costo_tarifa : 0);
+        
+        if (montoACobrar > 0 && data.practicantes_ids && Array.isArray(data.practicantes_ids)) {
+            const montoPorPersona = montoACobrar / data.practicantes_ids.length;
             for (const pId of data.practicantes_ids) {
                 const concepto = `Costo de Salón - Clase ${clase.estado === 'cancelada' ? 'Cancelada' : 'Suspendida'} del ${clase.fecha}`;
                 
                 await Deuda.create({
                     practicante_id: pId,
-                    monto: lugar.costo_tarifa,
+                    monto: montoPorPersona,
                     concepto: concepto,
                     fecha: clase.fecha,
                     estado: 'pendiente',
@@ -160,7 +171,9 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         hora_fin: cleanHoraFin,
         profesor_id: data.profesor_id !== undefined ? data.profesor_id : clase.profesor_id,
         pago_espacio_realizado: data.pago_espacio_realizado !== undefined ? data.pago_espacio_realizado : clase.pago_espacio_realizado,
-        fecha_pago_espacio: data.fecha_pago_espacio !== undefined ? data.fecha_pago_espacio : clase.fecha_pago_espacio
+        fecha_pago_espacio: data.fecha_pago_espacio !== undefined ? data.fecha_pago_espacio : clase.fecha_pago_espacio,
+        monto_pago_espacio: data.monto_pago_espacio !== undefined ? data.monto_pago_espacio : clase.monto_pago_espacio,
+        monto_referencia_espacio: data.monto_referencia_espacio !== undefined ? data.monto_referencia_espacio : clase.monto_referencia_espacio
     });
 
     res.json({ data: updatedClase.toJSON() });

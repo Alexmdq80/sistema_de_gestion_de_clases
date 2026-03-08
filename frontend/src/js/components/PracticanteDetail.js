@@ -172,6 +172,9 @@ export class PracticanteDetail {
             <dl>
               <dt>Nombre Completo:</dt>
               <dd>${this.escapeHtml(practicante.nombre_completo)}</dd>
+
+              <dt>DNI:</dt>
+              <dd>${practicante.dni || 'No especificado'}</dd>
               
               <dt>Fecha de Nacimiento:</dt>
               <dd>${practicante.fecha_nacimiento ? formatDateReadable(practicante.fecha_nacimiento) : 'No especificada'}</dd>

@@ -11,6 +11,8 @@ export class CostosPage {
         this.selectedYear = today.getFullYear();
         
         this.clases = [];
+        this.movimientos = [];
+        this.categorias = [];
         this.filters = {};
         this.updateFiltersFromMonthYear();
     }
@@ -59,13 +61,62 @@ export class CostosPage {
                     <div class="form-group col-md-2">
                         <button id="costo-refresh-btn" class="btn btn-outline-secondary btn-block">Actualizar</button>
                     </div>
+                    <div class="form-group col-md-1">
+                        <button id="add-movimiento-btn" class="btn btn-success btn-block" title="Nuevo Movimiento">+</button>
+                    </div>
+                    <div class="form-group col-md-1">
+                        <button id="manage-cats-btn" class="btn btn-outline-info btn-block" title="Configurar Categorías">⚙</button>
+                    </div>
                 </div>
             </div>
 
             <div id="costos-summary" class="mb-4"></div>
 
             <div id="costos-content">
-                <div class="loader text-center p-5">Cargando datos de costos...</div>
+                <div class="loader text-center p-5">Cargando datos...</div>
+            </div>
+
+            <!-- Modal para Movimiento de Caja -->
+            <div id="movimiento-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h2>Nuevo Movimiento de Caja</h2>
+                        <span class="close-movimiento-modal close-button">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="movimiento-form">
+                            <div class="form-group">
+                                <label for="mov-tipo">Tipo de Movimiento:</label>
+                                <select id="mov-tipo" class="form-control" required>
+                                    <option value="ingreso">Ingreso (Entrada de dinero)</option>
+                                    <option value="egreso">Egreso (Gasto/Salida de dinero)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="mov-categoria">Categoría:</label>
+                                <select id="mov-categoria" class="form-control" required>
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="mov-monto">Importe ($):</label>
+                                <input type="number" id="mov-monto" class="form-control" step="0.01" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="mov-fecha">Fecha:</label>
+                                <input type="date" id="mov-fecha" class="form-control" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="mov-descripcion">Descripción / Notas:</label>
+                                <textarea id="mov-descripcion" class="form-control" rows="2" placeholder="Ej: Venta remera talle L"></textarea>
+                            </div>
+                            <div class="form-actions mt-4">
+                                <button type="submit" class="btn btn-success">Guardar Movimiento</button>
+                                <button type="button" class="btn btn-secondary cancel-movimiento-modal">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
 
             <!-- Modal para fecha de pago -->
@@ -81,6 +132,18 @@ export class CostosPage {
                             <div class="form-group">
                                 <label for="input-fecha-pago">Fecha en que se realizó el pago:</label>
                                 <input type="date" id="input-fecha-pago" class="form-control" required>
+                            </div>
+
+                            <div class="form-group bg-light p-2 border rounded mb-3">
+                                <label for="input-monto-referencia" class="text-muted mb-0">Costo Estándar (Referencia para esta sesión):</label>
+                                <input type="number" id="input-monto-referencia" class="form-control" step="0.01">
+                                <small class="text-muted">Calculado automáticamente, pero puede ajustarlo si el club cambió la tarifa base hoy.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="input-monto-pago" class="font-weight-bold text-primary">Importe Final Pagado ($):</label>
+                                <input type="number" id="input-monto-pago" class="form-control form-control-lg border-primary" step="0.01" required>
+                                <small class="text-info">Puede modificar este monto en caso de descuentos o bonificaciones.</small>
                             </div>
 
                             <div id="charge-options-section" class="mt-4 p-3 bg-light border rounded" style="display: none;">
@@ -106,6 +169,29 @@ export class CostosPage {
                     </div>
                 </div>
             </div>
+
+            <!-- Modal para Categorías de Caja -->
+            <div id="categoria-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h2>Configurar Categorías</h2>
+                        <span class="close-categoria-modal close-button">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="add-categoria-form" class="mb-4">
+                            <div class="input-group">
+                                <input type="text" id="new-cat-nombre" class="form-control" placeholder="Nueva categoría..." required>
+                                <div class="input-group-append">
+                                    <button type="submit" class="btn btn-primary">Añadir</button>
+                                </div>
+                            </div>
+                        </form>
+                        <ul id="categorias-list" class="list-group">
+                            <!-- Populated dynamically -->
+                        </ul>
+                    </div>
+                </div>
+            </div>
         `;
 
         this.attachEvents();
@@ -119,12 +205,68 @@ export class CostosPage {
             this.updateFiltersFromMonthYear();
             this.loadData();
         };
+this.container.querySelector('#costo-refresh-btn').onclick = () => this.loadData();
 
-        this.container.querySelector('#costo-refresh-btn').onclick = () => this.loadData();
+// Movimiento Caja Modal
+const movModal = this.container.querySelector('#movimiento-modal');
+const movCatSelect = movModal.querySelector('#mov-categoria');
 
-        // Pago Modal events
-        const modal = this.container.querySelector('#pago-fecha-modal');
-        const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
+this.container.querySelector('#add-movimiento-btn').onclick = () => {
+    // Populate categories dynamically
+    movCatSelect.innerHTML = this.categorias.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('');
+    if (this.categorias.length === 0) movCatSelect.innerHTML = '<option value="General">General</option>';
+
+    movModal.querySelector('#movimiento-form').reset();
+    movModal.querySelector('#mov-fecha').value = new Date().toISOString().split('T')[0];
+    movModal.style.display = 'block';
+};
+
+this.container.querySelector('.close-movimiento-modal').onclick = () => movModal.style.display = 'none';
+this.container.querySelector('.cancel-movimiento-modal').onclick = () => movModal.style.display = 'none';
+
+// Categorias Modal
+const catModal = this.container.querySelector('#categoria-modal');
+const catsList = catModal.querySelector('#categorias-list');
+
+this.container.querySelector('#manage-cats-btn').onclick = () => {
+    this.renderCategoriesList(catsList);
+    catModal.style.display = 'block';
+};
+
+this.container.querySelector('.close-categoria-modal').onclick = () => catModal.style.display = 'none';
+
+this.container.querySelector('#add-categoria-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const nombre = this.container.querySelector('#new-cat-nombre').value;
+    try {
+        await apiClient.post('/categorias-caja', { nombre });
+        this.container.querySelector('#new-cat-nombre').value = '';
+        // Reload categories
+        const res = await apiClient.get('/categorias-caja');        this.categorias = res.data;
+        this.renderCategoriesList(catsList);
+    } catch (error) { displayApiError(error); }
+};
+
+this.container.querySelector('#movimiento-form').onsubmit = async (e) => {    e.preventDefault();
+    const data = {
+        tipo: movModal.querySelector('#mov-tipo').value,
+        categoria: movModal.querySelector('#mov-categoria').value,
+        monto: parseFloat(movModal.querySelector('#mov-monto').value),
+        fecha: movModal.querySelector('#mov-fecha').value,
+        descripcion: movModal.querySelector('#mov-descripcion').value
+    };
+
+    try {
+        await apiClient.post('/caja', data);
+        showSuccess('Movimiento registrado');
+        movModal.style.display = 'none';
+        await this.loadData();
+    } catch (error) { displayApiError(error); }
+};
+
+// Pago Modal events (ya existentes)
+const modal = this.container.querySelector('#pago-fecha-modal');
+const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         const practicantesSection = this.container.querySelector('#practicantes-to-charge-section');
 
         chargeSalonCheckbox.onchange = () => {
@@ -134,15 +276,26 @@ export class CostosPage {
         this.container.querySelector('.close-pago-modal').onclick = () => modal.style.display = 'none';
         this.container.querySelector('.cancel-pago-modal').onclick = () => modal.style.display = 'none';
         
+        const montoRefInput = this.container.querySelector('#input-monto-referencia');
+        const montoPagoInput = this.container.querySelector('#input-monto-pago');
+
+        montoRefInput.oninput = () => {
+            montoPagoInput.value = montoRefInput.value;
+        };
+
         this.container.querySelector('#pago-fecha-form').onsubmit = async (e) => {
             e.preventDefault();
             const id = parseInt(this.container.querySelector('#pago-clase-id').value, 10);
             const fecha = this.container.querySelector('#input-fecha-pago').value;
+            const monto = parseFloat(montoPagoInput.value);
+            const montoRef = parseFloat(montoRefInput.value);
             
             const chargeOptions = {
                 cobrar_salon: chargeSalonCheckbox.checked,
                 practicantes_ids: Array.from(this.container.querySelectorAll('.practicante-charge-checkbox:checked'))
-                    .map(cb => parseInt(cb.value, 10))
+                    .map(cb => parseInt(cb.value, 10)),
+                monto_pago_espacio: monto,
+                monto_referencia_espacio: montoRef
             };
 
             await this.submitPayment(id, true, fecha, chargeOptions);
@@ -157,20 +310,37 @@ export class CostosPage {
     async loadData() {
         const content = this.container.querySelector('#costos-content');
         try {
-            const response = await apiClient.get('/asistencia/clases', this.filters);
-            this.clases = response.data;
+            const results = await Promise.allSettled([
+                apiClient.get('/asistencia/clases', this.filters),
+                apiClient.get('/caja', this.filters),
+                apiClient.get('/categorias-caja')
+            ]);
+            
+            this.clases = results[0].status === 'fulfilled' ? results[0].value.data : [];
+            this.movimientos = results[1].status === 'fulfilled' ? results[1].value.data : [];
+            this.categorias = results[2].status === 'fulfilled' ? (results[2].value.data || []) : [];
+            
+            if (results.some(r => r.status === 'rejected')) {
+                console.error('Some requests failed:', results.filter(r => r.status === 'rejected'));
+            }
+
             this.renderList(content);
             this.renderSummary();
         } catch (error) {
+            console.error('Error loading data:', error);
             displayApiError(error, content);
         }
     }
 
-    calculateClassCost(clase) {
+    // Obtiene lo que el club espera recibir (Costo Estándar/Referencia)
+    getExpectedCost(clase) {
+        if (clase.monto_referencia_espacio !== null) {
+            return parseFloat(clase.monto_referencia_espacio);
+        }
+        // Cálculo teórico si no hay referencia manual
         if (clase.tipo_tarifa === 'por_clase') {
             return parseFloat(clase.costo_tarifa);
         } else {
-            // Por hora
             const start = new Date(`2000-01-01T${clase.hora}`);
             const end = new Date(`2000-01-01T${clase.hora_fin}`);
             const diffHours = (end - start) / (1000 * 60 * 60);
@@ -178,119 +348,225 @@ export class CostosPage {
         }
     }
 
+    // Obtiene lo que realmente se pagó
+    getPaidAmount(clase) {
+        if (clase.pago_espacio_realizado && clase.monto_pago_espacio !== null) {
+            return parseFloat(clase.monto_pago_espacio);
+        }
+        return 0;
+    }
+
+    renderCategoriesList(container) {
+        container.innerHTML = this.categorias.map(c => `
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                ${c.nombre}
+                <button class="btn btn-sm btn-outline-danger delete-cat-btn" data-id="${c.id}">Eliminar</button>
+            </li>
+        `).join('') || '<li class="list-group-item text-center text-muted">No hay categorías configuradas</li>';
+
+        container.querySelectorAll('.delete-cat-btn').forEach(btn => {
+            btn.onclick = async () => {
+                if (confirm('¿Desea eliminar esta categoría?')) {
+                    try {
+                        await apiClient.delete(`/categorias-caja/${btn.dataset.id}`);
+                        const res = await apiClient.get('/categorias-caja');
+                        this.categorias = res.data;
+                        this.renderCategoriesList(container);
+                    } catch (error) { displayApiError(error); }
+                }
+            };
+        });
+    }
+
     renderSummary() {
         const summaryDiv = this.container.querySelector('#costos-summary');
         
-        // Count all classes for total projection (including cancelled/suspended since they might have a cost)
-        const totalCost = this.clases.reduce((acc, c) => acc + this.calculateClassCost(c), 0);
-        const totalPaid = this.clases.filter(c => c.pago_espacio_realizado).reduce((acc, c) => acc + this.calculateClassCost(c), 0);
-        const totalPending = totalCost - totalPaid;
+        // Clases
+        const totalExpectedClases = this.clases.reduce((acc, c) => acc + this.getExpectedCost(c), 0);
+        const totalPaidClases = this.clases.reduce((acc, c) => acc + this.getPaidAmount(c), 0);
+        
+        // Caja Extra
+        const totalIngresosExtra = this.movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
+        const totalEgresosExtra = this.movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
+
+        // Balance Final de Utilidad
+        // Utilidad = Ingresos Extra - Egresos Extra - Pagos de Clases
+        const utilidadNeta = totalIngresosExtra - totalEgresosExtra - totalPaidClases;
+        
+        // Diferencia de negociación con el club
+        const ahorroNegociacion = totalExpectedClases - totalPaidClases;
 
         summaryDiv.innerHTML = `
-            <div class="grid grid-3 gap-4">
-                <div class="card bg-primary text-white p-3 text-center">
-                    <h4>Total del Mes</h4>
-                    <h2 class="mb-0">$${totalCost.toFixed(2)}</h2>
-                    <small>${this.clases.length} sesiones en total</small>
-                </div>
+            <div class="grid grid-4 gap-4">
                 <div class="card bg-success text-white p-3 text-center">
-                    <h4>Total Pagado</h4>
-                    <h2 class="mb-0">$${totalPaid.toFixed(2)}</h2>
-                    <small>${this.clases.filter(c => c.pago_espacio_realizado).length} sesiones liquidadas</small>
+                    <h4>Ingresos Extra</h4>
+                    <h2 class="mb-0">$${totalIngresosExtra.toFixed(2)}</h2>
+                    <small>Ventas, aportes, etc.</small>
                 </div>
-                <div class="card bg-warning text-white p-3 text-center">
-                    <h4>Pendiente</h4>
-                    <h2 class="mb-0">$${totalPending.toFixed(2)}</h2>
-                    <small>${this.clases.filter(c => !c.pago_espacio_realizado).length} sesiones por pagar</small>
+                <div class="card bg-danger text-white p-3 text-center">
+                    <h4>Egresos (Gastos + Club)</h4>
+                    <h2 class="mb-0">$${(totalEgresosExtra + totalPaidClases).toFixed(2)}</h2>
+                    <small>Gastos varios y alquiler</small>
+                </div>
+                <div class="card ${utilidadNeta >= 0 ? 'bg-primary' : 'bg-warning'} text-white p-3 text-center">
+                    <h4>Utilidad Neta</h4>
+                    <h2 class="mb-0">$${utilidadNeta.toFixed(2)}</h2>
+                    <small>${utilidadNeta >= 0 ? 'Ganancia del mes' : 'Déficit del mes'}</small>
+                </div>
+                <div class="card bg-info text-white p-3 text-center">
+                    <h4>Ahorro en Alquiler</h4>
+                    <h2 class="mb-0">$${ahorroNegociacion.toFixed(2)}</h2>
+                    <small>Diferencia vs Tarifa Base</small>
                 </div>
             </div>
         `;
     }
 
     renderList(content) {
-        if (this.clases.length === 0) {
-            content.innerHTML = '<p class="text-center p-5 text-muted">No hay clases registradas en este periodo.</p>';
+        if (this.clases.length === 0 && this.movimientos.length === 0) {
+            content.innerHTML = '<p class="text-center p-5 text-muted">No hay actividad registrada en este periodo.</p>';
             return;
         }
 
         content.innerHTML = `
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Lugar</th>
-                            <th>Profesor</th>
-                            <th>Horas</th>
-                            <th>Tarifa</th>
-                            <th>Importe</th>
-                            <th>Estado Pago</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${this.clases.map(c => {
-                            const cost = this.calculateClassCost(c);
-                            const isCancelled = c.estado === 'cancelada';
-                            const isSuspended = c.estado === 'suspendida';
-                            
-                            let estadoBadge = '';
-                            if (c.pago_espacio_realizado) {
-                                estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDate(c.fecha_pago_espacio)}">PAGADA</span>`;
-                            } else {
-                                estadoBadge = '<span class="badge badge-warning">PENDIENTE</span>';
-                            }
-
-                            if (isCancelled || isSuspended) {
-                                estadoBadge += ` <span class="badge badge-light">${c.estado.toUpperCase()}</span>`;
-                            }
-
-                            return `
-                            <tr class="${isCancelled || isSuspended ? 'table-light text-muted' : ''}">
-                                <td><strong>${formatDate(c.fecha)}</strong></td>
-                                <td>${c.lugar_nombre}</td>
-                                <td><small>${c.profesor_nombre || '-'}</small></td>
-                                <td>${c.hora.substring(0, 5)} - ${c.hora_fin.substring(0, 5)}</td>
-                                <td><small>$${parseFloat(c.costo_tarifa).toFixed(2)} / ${c.tipo_tarifa === 'por_hora' ? 'h' : 'clase'}</small></td>
-                                <td><strong>$${cost.toFixed(2)}</strong></td>
-                                <td>
-                                    ${estadoBadge}
-                                </td>
-                                <td>
-                                    ${!c.pago_espacio_realizado ? `
-                                        <button class="btn btn-sm btn-success mark-paid-btn" data-id="${c.id}">Marcar Pagada</button>
-                                    ` : `
-                                        <button class="btn btn-sm btn-outline-secondary unmark-paid-btn" data-id="${c.id}">Anular Pago</button>
-                                    `}
-                                </td>
+            <div class="costos-section mb-5">
+                <h3>Resumen de Alquiler de Espacio (Club)</h3>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Lugar</th>
+                                <th>Esperado</th>
+                                <th>Pagado</th>
+                                <th>Diferencia</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
                             </tr>
-                        `;}).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${this.clases.map(c => {
+                                const expected = this.getExpectedCost(c);
+                                const paid = this.getPaidAmount(c);
+                                const diff = expected - paid;
+                                
+                                const isCancelled = c.estado === 'cancelada';
+                                const isSuspended = c.estado === 'suspendida';
+                                
+                                let estadoBadge = '';
+                                if (c.pago_espacio_realizado) {
+                                    estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDate(c.fecha_pago_espacio)}">PAGADA</span>`;
+                                } else {
+                                    estadoBadge = '<span class="badge badge-warning">PENDIENTE</span>';
+                                }
+
+                                return `
+                                <tr class="${isCancelled || isSuspended ? 'table-light text-muted' : ''}">
+                                    <td><strong>${formatDate(c.fecha)}</strong></td>
+                                    <td>${c.lugar_nombre}</td>
+                                    <td>$${expected.toFixed(2)}</td>
+                                    <td class="${c.pago_espacio_realizado ? 'text-success font-weight-bold' : 'text-muted'}">
+                                        $${paid.toFixed(2)}
+                                    </td>
+                                    <td class="${diff > 0 ? 'text-info' : (diff < 0 ? 'text-danger' : 'text-muted')}">
+                                        ${c.pago_espacio_realizado ? (diff > 0 ? `-$${diff.toFixed(2)}` : (diff < 0 ? `+$${Math.abs(diff).toFixed(2)}` : '-')) : '-'}
+                                    </td>
+                                    <td>${estadoBadge}</td>
+                                    <td>
+                                        ${!c.pago_espacio_realizado ? `
+                                            <button class="btn btn-sm btn-success mark-paid-btn" data-id="${c.id}">Pagar</button>
+                                        ` : `
+                                            <div class="btn-group">
+                                                <button class="btn btn-sm btn-outline-primary edit-payment-btn" data-id="${c.id}">Editar</button>
+                                                <button class="btn btn-sm btn-outline-secondary unmark-paid-btn" data-id="${c.id}">X</button>
+                                            </div>
+                                        `}
+                                    </td>
+                                </tr>
+                            `;}).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="caja-section mb-5">
+                <h3>Otros Movimientos de Caja (Ventas, Gastos, etc.)</h3>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Categoría</th>
+                                <th>Descripción</th>
+                                <th>Monto</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${this.movimientos.map(m => `
+                                <tr>
+                                    <td>${formatDate(m.fecha)}</td>
+                                    <td><span class="badge ${m.tipo === 'ingreso' ? 'badge-success' : 'badge-danger'}">${m.tipo.toUpperCase()}</span></td>
+                                    <td>${m.categoria}</td>
+                                    <td><small>${m.descripcion || '-'}</small></td>
+                                    <td class="${m.tipo === 'ingreso' ? 'text-success' : 'text-danger'}"><strong>$${m.monto.toFixed(2)}</strong></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger delete-mov-btn" data-id="${m.id}">Eliminar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                            ${this.movimientos.length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No hay movimientos extra en este periodo.</td></tr>' : ''}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         `;
 
-        content.querySelectorAll('.mark-paid-btn').forEach(btn => {
-            btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), true);
-        });
-
-        content.querySelectorAll('.unmark-paid-btn').forEach(btn => {
-            btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), false);
+        // Eventos Clases (ya existentes)
+        content.querySelectorAll('.mark-paid-btn').forEach(btn => btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), true));
+        content.querySelectorAll('.edit-payment-btn').forEach(btn => btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), true, true));
+        content.querySelectorAll('.unmark-paid-btn').forEach(btn => btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), false));
+        
+        // Eventos Caja
+        content.querySelectorAll('.delete-mov-btn').forEach(btn => {
+            btn.onclick = async () => {
+                if (confirm('¿Desea eliminar este movimiento de caja?')) {
+                    try {
+                        await apiClient.delete(`/caja/${btn.dataset.id}`);
+                        showSuccess('Movimiento eliminado');
+                        await this.loadData();
+                    } catch (error) { displayApiError(error); }
+                }
+            };
         });
     }
 
-    async handleMarkPaid(id, isPaid) {
+    async handleMarkPaid(id, isPaid, isEdit = false) {
         if (isPaid) {
             const clase = this.clases.find(c => c.id === id);
             const modal = this.container.querySelector('#pago-fecha-modal');
+            const modalTitle = modal.querySelector('h2');
             const chargeSection = this.container.querySelector('#charge-options-section');
             const practicantesList = this.container.querySelector('#reserved-practicantes-list');
             const chargeCheckbox = this.container.querySelector('#charge-salon-cost');
             const practicantesSection = this.container.querySelector('#practicantes-to-charge-section');
 
+            modalTitle.textContent = isEdit ? 'Editar Registro de Pago' : 'Registrar Fecha de Pago';
             this.container.querySelector('#pago-clase-id').value = id;
-            this.container.querySelector('#input-fecha-pago').value = new Date().toISOString().split('T')[0];
             
+            // Si es edición, usamos los valores ya guardados. Si no, calculamos sugeridos.
+            if (isEdit) {
+                this.container.querySelector('#input-fecha-pago').value = clase.fecha_pago_espacio;
+                this.container.querySelector('#input-monto-referencia').value = parseFloat(clase.monto_referencia_espacio || 0).toFixed(2);
+                this.container.querySelector('#input-monto-pago').value = parseFloat(clase.monto_pago_espacio || 0).toFixed(2);
+            } else {
+                const standardCost = this.getExpectedCost(clase);
+                this.container.querySelector('#input-fecha-pago').value = new Date().toISOString().split('T')[0];
+                this.container.querySelector('#input-monto-referencia').value = standardCost.toFixed(2);
+                this.container.querySelector('#input-monto-pago').value = standardCost.toFixed(2);
+            }
+
             // Reset charge options
             chargeCheckbox.checked = false;
             practicantesSection.style.display = 'none';
@@ -340,6 +616,8 @@ export class CostosPage {
             await apiClient.put(`/asistencia/clases/${id}`, {
                 pago_espacio_realizado: isPaid,
                 fecha_pago_espacio: fecha,
+                monto_pago_espacio: chargeOptions.monto_pago_espacio,
+                monto_referencia_espacio: chargeOptions.monto_referencia_espacio,
                 cobrar_salon: chargeOptions.cobrar_salon,
                 practicantes_ids: chargeOptions.practicantes_ids
             });

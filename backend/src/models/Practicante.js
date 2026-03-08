@@ -9,6 +9,7 @@ export class Practicante {
         this.user_id = data.user_id || null;
         this.es_profesor = data.es_profesor !== undefined ? !!data.es_profesor : false;
         this.nombre_completo = data.nombre_completo;
+        this.dni = data.dni || null;
         this.fecha_nacimiento = data.fecha_nacimiento || null;
         this.genero = data.genero || null;
         this.telefono = data.telefono || null;
@@ -48,19 +49,20 @@ export class Practicante {
     static async create(data, userId = null) {
         const sql = `
       INSERT INTO Practicante (
-        user_id, es_profesor, nombre_completo, fecha_nacimiento, genero, telefono, email,
+        user_id, es_profesor, nombre_completo, dni, fecha_nacimiento, genero, telefono, email,
         direccion, condiciones_medicas, medicamentos, limitaciones_fisicas, alergias,
         emergencia_nombre, emergencia_telefono, obra_social, obra_social_nro,
         emergencia_servicio, emergencia_servicio_telefono, ocupacion, estudios,
         actividad_fisica_actual, actividad_fisica_detalle, actividad_fisica_anios_inactivo,
         actividad_fisica_anterior, observaciones_adicionales
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
         const values = [
             data.user_id || null,
             data.es_profesor !== undefined ? data.es_profesor : false,
             data.nombre_completo,
+            data.dni || null,
             data.fecha_nacimiento || null,
             data.genero || null,
             data.telefono || null,
@@ -135,9 +137,9 @@ export class Practicante {
         const searchParams = [];
 
         if (search && search.trim() !== '') {
-            whereClause += ' AND (nombre_completo LIKE ? OR IFNULL(telefono, "") LIKE ? OR IFNULL(email, "") LIKE ?)';
+            whereClause += ' AND (nombre_completo LIKE ? OR IFNULL(dni, "") LIKE ? OR IFNULL(telefono, "") LIKE ? OR IFNULL(email, "") LIKE ?)';
             const searchTerm = `%${search.trim()}%`;
-            searchParams.push(searchTerm, searchTerm, searchTerm);
+            searchParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
         }
 
         if (es_profesor !== undefined) {
@@ -262,7 +264,7 @@ export class Practicante {
         if (!currentData) return null;
 
         const allowedFields = [
-            'nombre_completo', 'fecha_nacimiento', 'genero', 'telefono', 'email',
+            'nombre_completo', 'dni', 'fecha_nacimiento', 'genero', 'telefono', 'email',
             'direccion', 'condiciones_medicas', 'medicamentos', 'limitaciones_fisicas', 'alergias',
             'user_id', 'es_profesor',
             'emergencia_nombre', 'emergencia_telefono', 'obra_social', 'obra_social_nro',
@@ -401,6 +403,7 @@ export class Practicante {
             user_id: this.user_id,
             es_profesor: this.es_profesor,
             nombre_completo: this.nombre_completo,
+            dni: this.dni,
             fecha_nacimiento: this.fecha_nacimiento,
             genero: this.genero,
             telefono: this.telefono,

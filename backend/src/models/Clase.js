@@ -17,6 +17,8 @@ export class Clase {
         this.usuario_id = data.usuario_id || null;
         this.pago_espacio_realizado = data.pago_espacio_realizado !== undefined ? !!data.pago_espacio_realizado : false;
         this.fecha_pago_espacio = data.fecha_pago_espacio || null;
+        this.monto_pago_espacio = data.monto_pago_espacio !== undefined ? data.monto_pago_espacio : null;
+        this.monto_referencia_espacio = data.monto_referencia_espacio !== undefined ? data.monto_referencia_espacio : null;
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
         this.deleted_at = data.deleted_at || null;
@@ -121,7 +123,7 @@ export class Clase {
         const allowedFields = [
             'tipo', 'estado', 'motivo_cancelacion', 'observaciones', 
             'fecha', 'hora', 'hora_fin', 'profesor_id',
-            'pago_espacio_realizado', 'fecha_pago_espacio'
+            'pago_espacio_realizado', 'fecha_pago_espacio', 'monto_pago_espacio', 'monto_referencia_espacio'
         ];
 
         const updates = [];
@@ -181,6 +183,8 @@ export class Clase {
             usuario_id: this.usuario_id,
             pago_espacio_realizado: this.pago_espacio_realizado,
             fecha_pago_espacio: fechaPagoFormatted,
+            monto_pago_espacio: this.monto_pago_espacio,
+            monto_referencia_espacio: this.monto_referencia_espacio,
             actividad_nombre: this.actividad_nombre,
             lugar_nombre: this.lugar_nombre,
             profesor_nombre: this.profesor_nombre,
