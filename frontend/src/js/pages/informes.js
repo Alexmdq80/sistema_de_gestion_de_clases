@@ -97,6 +97,15 @@ export class InformesPage {
     attachEvents() {
         this.container.querySelector('#report-type').onchange = (e) => {
             this.currentReport = e.target.value;
+            
+            // Si volvemos al balance, por defecto mostramos todas las sedes para evitar que 
+            // parezca que faltan datos si se quedó una sede filtrada antes.
+            if (this.currentReport === 'balance') {
+                this.selectedLugarId = '';
+                const lugarSelect = this.container.querySelector('#report-lugar');
+                if (lugarSelect) lugarSelect.value = '';
+            }
+
             const basisContainer = this.container.querySelector('#basis-container');
             if (basisContainer) {
                 basisContainer.style.display = this.currentReport === 'balance' ? 'block' : 'none';
@@ -130,8 +139,14 @@ export class InformesPage {
     async loadReport() {
         const content = this.container.querySelector('#report-content');
         content.innerHTML = '<div class="text-center p-5">Generando informe...</div>';
+        
+        // Reset data to avoid using previous report data during load
+        this.data = [];
 
         try {
+            // Limpiar estados de impresión anteriores
+            this.container.classList.remove('report-filtered');
+            
             let endpoint = '';
             const params = {
                 mes: this.selectedMonth,
@@ -164,8 +179,181 @@ export class InformesPage {
             const res = await apiClient.get(endpoint, params);
             this.data = res.data;
             this.renderReportData(content);
+            this.attachReportEvents();
         } catch (error) {
             displayApiError(error, content);
+        }
+    }
+
+    attachReportEvents() {
+        const isCuotas = this.currentReport === 'cuotas';
+        const isPadron = this.currentReport === 'padron';
+        const isEspacios = this.currentReport === 'espacios';
+        const isConsolidado = this.currentReport === 'consolidado';
+        
+        if (isCuotas || isPadron || isEspacios) {
+            let selectAllId = '';
+            if (isCuotas) selectAllId = '#select-all-cuotas';
+            else if (isPadron) selectAllId = '#select-all-padron';
+            else if (isEspacios) selectAllId = '#select-all-espacios';
+
+            const selectAll = this.container.querySelector(selectAllId);
+            const rowCheckboxes = this.container.querySelectorAll('.row-checkbox');
+            
+            if (selectAll) {
+                selectAll.onclick = () => {
+                    rowCheckboxes.forEach(cb => {
+                        cb.checked = selectAll.checked;
+                        const tr = cb.closest('tr');
+                        if (selectAll.checked) tr.classList.remove('no-print');
+                        else tr.classList.add('no-print');
+                    });
+                    if (isCuotas) this.updateCuotasTotal();
+                    if (isPadron) this.updatePadronTotal();
+                    if (isEspacios) this.updateEspaciosTotal();
+                };
+            }
+
+            rowCheckboxes.forEach(cb => {
+                cb.onclick = () => {
+                    const tr = cb.closest('tr');
+                    if (cb.checked) tr.classList.remove('no-print');
+                    else tr.classList.add('no-print');
+                    
+                    // Update select all state
+                    if (selectAll) {
+                        selectAll.checked = Array.from(rowCheckboxes).every(c => c.checked);
+                    }
+                    if (isCuotas) this.updateCuotasTotal();
+                    if (isPadron) this.updatePadronTotal();
+                    if (isEspacios) this.updateEspaciosTotal();
+                };
+            });
+        } else if (isConsolidado) {
+            // Logic for consolidated report (two tables)
+            ['cuota', 'alquiler'].forEach(type => {
+                // Buscamos el ID correcto (cuotas con 's' para el ID del checkbox general si así se definió)
+                const selectAllId = type === 'cuota' ? '#select-all-cons-cuotas' : '#select-all-cons-alquiler';
+                const selectAll = this.container.querySelector(selectAllId);
+                const rowCheckboxes = this.container.querySelectorAll(`.row-checkbox-${type}`);
+                
+                if (selectAll) {
+                    selectAll.onclick = () => {
+                        rowCheckboxes.forEach(cb => {
+                            cb.checked = selectAll.checked;
+                            const tr = cb.closest('tr');
+                            if (selectAll.checked) tr.classList.remove('no-print');
+                            else tr.classList.add('no-print');
+                        });
+                        this.updateConsolidadoTotals();
+                    };
+                }
+
+                rowCheckboxes.forEach(cb => {
+                    cb.onclick = () => {
+                        const tr = cb.closest('tr');
+                        if (cb.checked) tr.classList.remove('no-print');
+                        else tr.classList.add('no-print');
+                        
+                        if (selectAll) {
+                            selectAll.checked = Array.from(rowCheckboxes).every(c => c.checked);
+                        }
+                        this.updateConsolidadoTotals();
+                    };
+                });
+            });
+        }
+    }
+
+    updateConsolidadoTotals() {
+        if (this.currentReport !== 'consolidado') return;
+        
+        let subtotalCuotas = 0;
+        this.container.querySelectorAll('.row-checkbox-cuota').forEach(cb => {
+            if (cb.checked) {
+                const index = cb.closest('tr').dataset.index;
+                subtotalCuotas += parseFloat(this.data.cuotas[index].monto);
+            }
+        });
+
+        let subtotalAlquiler = 0;
+        this.container.querySelectorAll('.row-checkbox-alquiler').forEach(cb => {
+            if (cb.checked) {
+                const index = cb.closest('tr').dataset.index;
+                subtotalAlquiler += parseFloat(this.data.alquileres[index].monto || 0);
+            }
+        });
+
+        const totalALiquidar = subtotalCuotas + subtotalAlquiler;
+
+        // Update displays
+        const displays = {
+            '#subtotal-cons-cuotas': `$${subtotalCuotas.toFixed(2)}`,
+            '#resumen-cons-cuotas': `$${subtotalCuotas.toFixed(2)}`,
+            '#subtotal-cons-alquiler': `$${subtotalAlquiler.toFixed(2)}`,
+            '#resumen-cons-alquiler': `$${subtotalAlquiler.toFixed(2)}`,
+            '#total-cons-liquidar': `$${totalALiquidar.toFixed(2)}`
+        };
+
+        for (const [id, value] of Object.entries(displays)) {
+            const el = this.container.querySelector(id);
+            if (el) el.textContent = value;
+        }
+    }
+
+    updateCuotasTotal() {
+        if (this.currentReport !== 'cuotas') return;
+        
+        const rowCheckboxes = this.container.querySelectorAll('.row-checkbox');
+        let total = 0;
+        
+        rowCheckboxes.forEach(cb => {
+            if (cb.checked) {
+                const tr = cb.closest('tr');
+                const index = tr.dataset.index;
+                total += parseFloat(this.data[index].monto);
+            }
+        });
+        
+        const totalDisplay = this.container.querySelector('#cuotas-total-display');
+        if (totalDisplay) {
+            totalDisplay.textContent = `$${total.toFixed(2)}`;
+        }
+    }
+
+    updatePadronTotal() {
+        if (this.currentReport !== 'padron') return;
+        
+        const rowCheckboxes = this.container.querySelectorAll('.row-checkbox');
+        let count = 0;
+        
+        rowCheckboxes.forEach(cb => {
+            if (cb.checked) count++;
+        });
+        
+        const totalDisplay = this.container.querySelector('#padron-total-display');
+        if (totalDisplay) {
+            totalDisplay.textContent = `Total de registros seleccionados: ${count} de ${this.data.length}`;
+        }
+    }
+
+    updateEspaciosTotal() {
+        if (this.currentReport !== 'espacios') return;
+        
+        const rowCheckboxes = this.container.querySelectorAll('.row-checkbox');
+        let total = 0;
+        
+        rowCheckboxes.forEach(cb => {
+            if (cb.checked) {
+                const tr = cb.closest('tr');
+                const index = tr.dataset.index;
+                total += parseFloat(this.data[index].monto_pagado || 0);
+            }
+        });
+        
+        const totalDisplay = this.container.querySelector('#espacios-total-display');
+        if (totalDisplay) {
+            totalDisplay.textContent = `$${total.toFixed(2)}`;
         }
     }
 
@@ -306,28 +494,31 @@ export class InformesPage {
 
                 <div class="mb-5">
                     <h3 class="border-bottom pb-2">1. Detalle de Cuotas Sociales Recaudadas</h3>
-                    <table class="table table-sm">
+                    <table class="table table-sm" id="table-consolidado-cuotas">
                         <thead>
                             <tr>
+                                <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cons-cuotas" checked title="Seleccionar todos"></th>
                                 <th>Practicante</th>
                                 <th>Concepto</th>
                                 <th class="text-right">Monto</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${cuotas.map(c => `
-                                <tr>
+                            ${cuotas.map((c, index) => `
+                                <tr data-index="${index}">
+                                    <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-cuota" checked></td>
                                     <td>${c.nombre_completo}</td>
                                     <td>Cuota Social ${c.mes_abono}</td>
                                     <td class="text-right">$${parseFloat(c.monto).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
-                            ${cuotas.length === 0 ? '<tr><td colspan="3" class="text-center text-muted">No se registraron cuotas</td></tr>' : ''}
+                            ${cuotas.length === 0 ? '<tr><td colspan="4" class="text-center text-muted">No se registraron cuotas</td></tr>' : ''}
                         </tbody>
                         <tfoot>
                             <tr class="font-weight-bold bg-light">
-                                <td colspan="2" class="text-right">Subtotal Cuotas:</td>
-                                <td class="text-right">$${totalCuotas.toFixed(2)}</td>
+                                <td colspan="2" class="no-print"></td>
+                                <td class="text-right">Subtotal Cuotas:</td>
+                                <td class="text-right" id="subtotal-cons-cuotas">$${totalCuotas.toFixed(2)}</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -335,17 +526,17 @@ export class InformesPage {
 
                 <div class="mb-5">
                     <h3 class="border-bottom pb-2">2. Detalle de Alquiler de Espacios (Clases)</h3>
-                    <table class="table table-sm">
+                    <table class="table table-sm" id="table-consolidado-alquiler">
                         <thead>
                             <tr>
+                                <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cons-alquiler" checked title="Seleccionar todos"></th>
                                 <th>Fecha</th>
                                 <th>Actividad / Detalle</th>
                                 <th class="text-right">Monto</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${alquileres.map(a => {
-                                // Convertir a string YYYY-MM-DD primero para asegurar consistencia
+                            ${alquileres.map((a, index) => {
                                 const dateStr = formatDate(a.fecha);
                                 const [year, month, day] = dateStr.split('-');
                                 const dateObj = new Date(year, month - 1, day);
@@ -364,18 +555,20 @@ export class InformesPage {
                                 }
 
                                 return `
-                                <tr>
+                                <tr data-index="${index}">
+                                    <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-alquiler" checked></td>
                                     <td>${capitalizedDay} ${dateStr} <small class="text-muted">(${a.hora.substring(0, 5)} hs)</small></td>
                                     <td>${actividadDetalle}</td>
                                     <td class="text-right">$${montoNum.toFixed(2)}</td>
                                 </tr>
                             `}).join('')}
-                            ${alquileres.length === 0 ? '<tr><td colspan="3" class="text-center text-muted">No se registraron alquileres</td></tr>' : ''}
+                            ${alquileres.length === 0 ? '<tr><td colspan="4" class="text-center text-muted">No se registraron alquileres</td></tr>' : ''}
                         </tbody>
                         <tfoot>
                             <tr class="font-weight-bold bg-light">
-                                <td colspan="2" class="text-right">Subtotal Alquiler:</td>
-                                <td class="text-right">$${totalAlquiler.toFixed(2)}</td>
+                                <td colspan="2" class="no-print"></td>
+                                <td class="text-right">Subtotal Alquiler:</td>
+                                <td class="text-right" id="subtotal-cons-alquiler">$${totalAlquiler.toFixed(2)}</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -386,17 +579,17 @@ export class InformesPage {
                     <div style="display: flex; justify-content: space-around; align-items: center;">
                         <div>
                             <p class="mb-0">Recaudación Cuotas</p>
-                            <h4>$${totalCuotas.toFixed(2)}</h4>
+                            <h4 id="resumen-cons-cuotas">$${totalCuotas.toFixed(2)}</h4>
                         </div>
                         <div style="font-size: 2rem;">+</div>
                         <div>
                             <p class="mb-0">Pago Alquiler Salón</p>
-                            <h4>$${totalAlquiler.toFixed(2)}</h4>
+                            <h4 id="resumen-cons-alquiler">$${totalAlquiler.toFixed(2)}</h4>
                         </div>
                         <div style="font-size: 2rem;">=</div>
                         <div>
                             <p class="mb-0 font-weight-bold">TOTAL A LIQUIDAR AL CLUB</p>
-                            <h2 class="text-primary" style="font-size: 2.5rem; font-weight: 800;">$${totalALiquidar.toFixed(2)}</h2>
+                            <h2 class="text-primary" id="total-cons-liquidar" style="font-size: 2.5rem; font-weight: 800;">$${totalALiquidar.toFixed(2)}</h2>
                         </div>
                     </div>
                 </div>
@@ -421,6 +614,7 @@ export class InformesPage {
                     <table class="table table-sm table-bordered" style="font-size: 0.85rem;">
                         <thead class="thead-light">
                             <tr>
+                                <th class="no-print" style="width: 30px; text-align: center;"><input type="checkbox" id="select-all-padron" checked title="Seleccionar todos"></th>
                                 <th>ID</th>
                                 <th>Nº Socio</th>
                                 <th>Nombre y Apellido</th>
@@ -435,8 +629,9 @@ export class InformesPage {
                             </tr>
                         </thead>
                         <tbody>
-                            ${this.data.map(item => `
-                                <tr>
+                            ${this.data.map((item, index) => `
+                                <tr data-index="${index}">
+                                    <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                     <td><small class="text-muted">${item.sistema_id}</small></td>
                                     <td><strong>${item.numero_socio || '-'}</strong></td>
                                     <td>${item.nombre_completo}</td>
@@ -454,7 +649,7 @@ export class InformesPage {
                     </table>
                 </div>
                 <div class="mt-4 flex justify-between small text-muted">
-                    <span>Total de registros: ${this.data.length}</span>
+                    <span id="padron-total-display">Total de registros: ${this.data.length}</span>
                     <span class="text-right">
                         Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
                     </span>
@@ -476,6 +671,7 @@ export class InformesPage {
                 <table class="table table-sm">
                     <thead>
                         <tr>
+                            <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cuotas" checked title="Seleccionar todos"></th>
                             ${!isSedeFiltered ? '<th>Sede / Club</th>' : ''}
                             <th>Practicante</th>
                             <th>Mes Abonado</th>
@@ -484,8 +680,9 @@ export class InformesPage {
                         </tr>
                     </thead>
                     <tbody>
-                        ${this.data.map(item => `
-                            <tr>
+                        ${this.data.map((item, index) => `
+                            <tr data-index="${index}">
+                                <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
                                 <td>${item.practicante_nombre}</td>
                                 <td>${item.mes_abono}</td>
@@ -496,8 +693,8 @@ export class InformesPage {
                     </tbody>
                     <tfoot>
                         <tr class="font-weight-bold" style="font-size: 1.2rem; background: #f8f9fa;">
-                            <td colspan="${isSedeFiltered ? '3' : '4'}" class="text-right">TOTAL RECAUDADO:</td>
-                            <td class="text-right text-success">$${total.toFixed(2)}</td>
+                            <td colspan="${isSedeFiltered ? '4' : '5'}" class="text-right">TOTAL RECAUDADO:</td>
+                            <td class="text-right text-success" id="cuotas-total-display">$${total.toFixed(2)}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -513,7 +710,6 @@ export class InformesPage {
         const isSedeFiltered = this.selectedLugarId !== '';
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
         
-        const totalEsperado = this.data.reduce((acc, item) => acc + parseFloat(item.monto_esperado || 0), 0);
         const totalPagado = this.data.reduce((acc, item) => acc + parseFloat(item.monto_pagado || 0), 0);
 
         content.innerHTML = `
@@ -523,6 +719,7 @@ export class InformesPage {
                 <table class="table table-sm">
                     <thead>
                         <tr>
+                            <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-espacios" checked title="Seleccionar todos"></th>
                             ${!isSedeFiltered ? '<th>Sede</th>' : ''}
                             <th>Fecha Clase</th>
                             <th>Actividad</th>
@@ -531,7 +728,7 @@ export class InformesPage {
                         </tr>
                     </thead>
                     <tbody>
-                        ${this.data.map(item => {
+                        ${this.data.map((item, index) => {
                             const dateStr = formatDate(item.fecha);
                             const [year, month, day] = dateStr.split('-');
                             const dateObj = new Date(year, month - 1, day);
@@ -539,7 +736,8 @@ export class InformesPage {
                             const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
 
                             return `
-                            <tr>
+                            <tr data-index="${index}">
+                                <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
                                 <td>${capitalizedDay} ${dateStr} <small>(${item.hora.substring(0, 5)} hs)</small></td>
                                 <td>${item.actividad_nombre}</td>
@@ -550,8 +748,8 @@ export class InformesPage {
                     </tbody>
                     <tfoot>
                         <tr class="font-weight-bold bg-light">
-                            <td colspan="${isSedeFiltered ? '2' : '3'}" class="text-right">TOTAL PAGADO:</td>
-                            <td class="text-right text-primary">$${totalPagado.toFixed(2)}</td>
+                            <td colspan="${isSedeFiltered ? '3' : '4'}" class="text-right">TOTAL PAGADO:</td>
+                            <td class="text-right text-primary" id="espacios-total-display">$${totalPagado.toFixed(2)}</td>
                             <td></td>
                         </tr>
                     </tfoot>
