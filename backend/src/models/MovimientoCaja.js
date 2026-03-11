@@ -11,6 +11,7 @@ export class MovimientoCaja {
         this.categoria = data.categoria;
         this.descripcion = data.descripcion || null;
         this.fecha = data.fecha;
+        this.lugar_id = data.lugar_id || null;
         this.practicante_id = data.practicante_id || null;
         this.usuario_id = data.usuario_id;
         this.created_at = data.created_at || null;
@@ -20,6 +21,7 @@ export class MovimientoCaja {
         // Joined data
         this.practicante_nombre = data.practicante_nombre || null;
         this.usuario_nombre = data.usuario_nombre || null;
+        this.lugar_nombre = data.lugar_nombre || null;
     }
 
     /**
@@ -29,10 +31,11 @@ export class MovimientoCaja {
      */
     static async findAll(filters = {}) {
         let sql = `
-            SELECT m.*, p.nombre_completo as practicante_nombre, u.email as usuario_nombre
+            SELECT m.*, p.nombre_completo as practicante_nombre, u.email as usuario_nombre, l.nombre as lugar_nombre
             FROM MovimientoCaja m
             LEFT JOIN Practicante p ON m.practicante_id = p.id
             JOIN User u ON m.usuario_id = u.id
+            LEFT JOIN Lugar l ON m.lugar_id = l.id
             WHERE m.deleted_at IS NULL
         `;
         const params = [];
@@ -53,6 +56,10 @@ export class MovimientoCaja {
             sql += ' AND m.categoria = ?';
             params.push(filters.categoria);
         }
+        if (filters.lugar_id) {
+            sql += ' AND (m.lugar_id = ? OR l.parent_id = ?)';
+            params.push(filters.lugar_id, filters.lugar_id);
+        }
 
         sql += ' ORDER BY m.fecha DESC, m.created_at DESC';
 
@@ -62,10 +69,11 @@ export class MovimientoCaja {
 
     static async findById(id) {
         const sql = `
-            SELECT m.*, p.nombre_completo as practicante_nombre, u.email as usuario_nombre
+            SELECT m.*, p.nombre_completo as practicante_nombre, u.email as usuario_nombre, l.nombre as lugar_nombre
             FROM MovimientoCaja m
             LEFT JOIN Practicante p ON m.practicante_id = p.id
             JOIN User u ON m.usuario_id = u.id
+            LEFT JOIN Lugar l ON m.lugar_id = l.id
             WHERE m.id = ? AND m.deleted_at IS NULL
         `;
         const [rows] = await pool.execute(sql, [id]);
@@ -74,8 +82,8 @@ export class MovimientoCaja {
 
     static async create(data) {
         const sql = `
-            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, practicante_id, usuario_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, practicante_id, usuario_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const values = [
             data.tipo,
@@ -83,6 +91,7 @@ export class MovimientoCaja {
             data.categoria,
             data.descripcion || null,
             data.fecha,
+            data.lugar_id || null,
             data.practicante_id || null,
             data.usuario_id
         ];
@@ -92,7 +101,7 @@ export class MovimientoCaja {
     }
 
     static async update(id, data) {
-        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'practicante_id'];
+        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'lugar_id', 'practicante_id'];
         const updates = [];
         const values = [];
 
@@ -126,6 +135,8 @@ export class MovimientoCaja {
             categoria: this.categoria,
             descripcion: this.descripcion,
             fecha: this.fecha instanceof Date ? this.fecha.toISOString().split('T')[0] : this.fecha,
+            lugar_id: this.lugar_id,
+            lugar_nombre: this.lugar_nombre,
             practicante_id: this.practicante_id,
             practicante_nombre: this.practicante_nombre,
             usuario_id: this.usuario_id,

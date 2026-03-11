@@ -1,6 +1,6 @@
 import { apiClient } from '../api/client.js';
 import { displayApiError, showSuccess } from '../utils/errors.js';
-import { formatDate, formatTime } from '../utils/formatting.js';
+import { formatDate, formatTime, formatDateDashes } from '../utils/formatting.js';
 
 export class CostosPage {
     constructor(container) {
@@ -19,6 +19,7 @@ export class CostosPage {
 
     updateFiltersFromMonthYear() {
         let firstDay, lastDay;
+        const currentLugarId = this.filters.lugar_id;
 
         if (this.selectedMonth === 'all') {
             // Rango de todo el año
@@ -37,8 +38,11 @@ export class CostosPage {
             return `${y}-${m}-${d}`;
         };
 
-        this.filters.fecha_inicio = formatDateStr(firstDay);
-        this.filters.fecha_fin = formatDateStr(lastDay);
+        this.filters = {
+            fecha_inicio: formatDateStr(firstDay),
+            fecha_fin: formatDateStr(lastDay),
+            lugar_id: currentLugarId
+        };
     }
 
     async render() {
@@ -64,6 +68,12 @@ export class CostosPage {
                         <input type="number" class="form-control" id="costo-year" value="${this.selectedYear}" placeholder="Año">
                     </div>
                     <div class="form-group col-md-3 mb-md-0">
+                        <select class="form-control" id="costo-lugar" title="Sede / Club">
+                            <option value="">Todas las Sedes</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="form-group col-md-2 mb-md-0">
                         <button id="costo-filter-btn" class="btn btn-primary btn-block">
                             Aplicar Filtro
                         </button>
@@ -73,20 +83,20 @@ export class CostosPage {
                             <i class="fas fa-plus"></i> + Movimiento
                         </button>
                     </div>
-                    <div class="form-group col-md-2 mb-md-0">
-                        <button id="manage-cats-btn" class="btn btn-outline-info btn-block" title="Configurar Categorías">
-                            <i class="fas fa-cog"></i> ⚙ Categorías
-                        </button>
-                    </div>
                 </div>
                 <div class="form-row mt-2">
-                    <div class="col-12">
+                    <div class="col-md-10">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="filter-by-mes-abono-caja" ${this.filterByMesAbono ? 'checked' : ''}>
                             <label class="form-check-label small text-muted" for="filter-by-mes-abono-caja">
                                 <i class="fas fa-info-circle"></i> Usar <strong>Mes de Abono</strong> para filtrar ingresos (en lugar de fecha de cobro real)
                             </label>
                         </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="manage-cats-btn" class="btn btn-outline-info btn-sm btn-block" title="Configurar Categorías">
+                            <i class="fas fa-cog"></i> Categorías
+                        </button>
                     </div>
                 </div>
             </div>
@@ -111,6 +121,13 @@ export class CostosPage {
                                 <select id="mov-tipo" class="form-control" required>
                                     <option value="ingreso">Ingreso (Entrada de dinero)</option>
                                     <option value="egreso">Egreso (Gasto/Salida de dinero)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="mov-lugar">Sede / Lugar:</label>
+                                <select id="mov-lugar" class="form-control">
+                                    <option value="">Global / Sin Sede</option>
+                                    <!-- Populated dynamically -->
                                 </select>
                             </div>
                             <div class="form-group">
@@ -216,7 +233,28 @@ export class CostosPage {
         `;
 
         this.attachEvents();
+        await this.loadInitialData();
         await this.loadData();
+    }
+
+    async loadInitialData() {
+        try {
+            const res = await apiClient.get('/lugares');
+            // Show only parent places
+            this.lugares = (res.data || []).filter(l => !l.parent_id);
+            
+            const filterLugar = this.container.querySelector('#costo-lugar');
+            if (filterLugar) {
+                filterLugar.innerHTML = '<option value="">Todas las Sedes</option>' + 
+                    this.lugares.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+            }
+
+            const modalLugar = this.container.querySelector('#mov-lugar');
+            if (modalLugar) {
+                modalLugar.innerHTML = '<option value="">Global / Sin Sede</option>' + 
+                    this.lugares.map(l => `<option value="${l.id}">${l.nombre}</option>`).join('');
+            }
+        } catch (error) { console.error(error); }
     }
 
     attachEvents() {
@@ -225,6 +263,10 @@ export class CostosPage {
             this.selectedMonth = monthVal === 'all' ? 'all' : parseInt(monthVal, 10);
             this.selectedYear = parseInt(this.container.querySelector('#costo-year').value, 10);
             this.filterByMesAbono = this.container.querySelector('#filter-by-mes-abono-caja').checked;
+            
+            const lugarId = this.container.querySelector('#costo-lugar').value;
+            this.filters.lugar_id = lugarId || undefined;
+
             this.updateFiltersFromMonthYear();
             this.loadData();
         };
@@ -269,9 +311,11 @@ this.container.querySelector('#add-categoria-form').onsubmit = async (e) => {
     } catch (error) { displayApiError(error); }
 };
 
-this.container.querySelector('#movimiento-form').onsubmit = async (e) => {    e.preventDefault();
+this.container.querySelector('#movimiento-form').onsubmit = async (e) => {
+    e.preventDefault();
     const data = {
         tipo: movModal.querySelector('#mov-tipo').value,
+        lugar_id: movModal.querySelector('#mov-lugar').value || null,
         categoria: movModal.querySelector('#mov-categoria').value,
         monto: parseFloat(movModal.querySelector('#mov-monto').value),
         fecha: movModal.querySelector('#mov-fecha').value,
@@ -555,8 +599,10 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 const paid = this.getPaidAmount(c);
                                 const diff = expected - paid;
                                 
-                                const dateStr = formatDate(c.fecha);
-                                const [year, month, day] = dateStr.split('-');
+                                const dateStr = formatDateDashes(c.fecha);
+                                // Ensure we have YYYY-MM-DD for reliable splitting
+                                const isoDate = formatDate(c.fecha);
+                                const [year, month, day] = isoDate.split('-');
                                 const dateObj = new Date(year, month - 1, day);
                                 const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
                                 const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
@@ -566,7 +612,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 
                                 let estadoBadge = '';
                                 if (c.pago_espacio_realizado) {
-                                    estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDate(c.fecha_pago_espacio)}">PAGADA</span>`;
+                                    estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDateDashes(c.fecha_pago_espacio)}">PAGADA</span>`;
                                 } else {
                                     estadoBadge = '<span class="badge badge-warning">PENDIENTE</span>';
                                 }
@@ -575,7 +621,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 <tr class="${isCancelled || isSuspended ? 'table-light text-muted' : ''}">
                                     <td>
                                         <div class="flex flex-col">
-                                            <strong>${capitalizedDay} ${dateStr}</strong>
+                                            <strong>${capitalizedDay} ${formatDateDashes(c.fecha)}</strong>
                                             <small class="text-muted">${c.hora.substring(0, 5)} hs</small>
                                         </div>
                                     </td>
@@ -624,7 +670,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso')
                                 .map(p => `
                                 <tr>
-                                    <td>${formatDate(p.fecha)}</td>
+                                    <td>${formatDateDashes(p.fecha)}</td>
                                     <td><strong>${this.escapeHtml(p.practicante_nombre)}</strong></td>
                                     <td>${this.escapeHtml(p.tipo_abono_nombre || 'Cuota Social')} <small class="text-muted">(${p.mes_abono})</small></td>
                                     <td><small>${this.escapeHtml(p.lugar_nombre || '-')}</small></td>
@@ -655,7 +701,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                         <tbody>
                             ${this.movimientos.map(m => `
                                 <tr>
-                                    <td>${formatDate(m.fecha)}</td>
+                                    <td>${formatDateDashes(m.fecha)}</td>
                                     <td><span class="badge ${m.tipo === 'ingreso' ? 'badge-success' : 'badge-danger'}">${m.tipo.toUpperCase()}</span></td>
                                     <td>${m.categoria}</td>
                                     <td><small>${m.descripcion || '-'}</small></td>

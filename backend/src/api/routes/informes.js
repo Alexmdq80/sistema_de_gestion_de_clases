@@ -271,14 +271,22 @@ router.get('/balance-mensual', asyncHandler(async (req, res) => {
     // 2. Otros Movimientos de Caja (Ventas, Gastos Extra)
     const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
     const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
-    
+
     let sqlMovCaja = `
-        SELECT tipo, SUM(monto) as total
-        FROM MovimientoCaja
-        WHERE deleted_at IS NULL AND fecha >= ? AND fecha <= ?
-        GROUP BY tipo
+        SELECT m.tipo, SUM(m.monto) as total
+        FROM MovimientoCaja m
+        LEFT JOIN Lugar l ON m.lugar_id = l.id
+        WHERE m.deleted_at IS NULL AND m.fecha >= ? AND m.fecha <= ?
     `;
-    const [movimientos] = await pool.execute(sqlMovCaja, [firstDay, lastDay]);
+    const paramsMovCaja = [firstDay, lastDay];
+
+    if (lugar_id) {
+        sqlMovCaja += ' AND (m.lugar_id = ? OR l.parent_id = ?)';
+        paramsMovCaja.push(lugar_id, lugar_id);
+    }
+
+    sqlMovCaja += ' GROUP BY m.tipo';
+    const [movimientos] = await pool.execute(sqlMovCaja, paramsMovCaja);
     const otrosIngresos = parseFloat(movimientos.find(m => m.tipo === 'ingreso')?.total || 0);
     const otrosEgresos = parseFloat(movimientos.find(m => m.tipo === 'egreso')?.total || 0);
 

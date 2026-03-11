@@ -193,8 +193,8 @@ export class Pago {
         }
 
         if (filters.lugar_id) {
-            sql += ' AND lugar_id = ?';
-            params.push(filters.lugar_id);
+            sql += ' AND (lugar_id = ? OR (SELECT parent_id FROM Lugar WHERE id = lugar_id) = ?)';
+            params.push(filters.lugar_id, filters.lugar_id);
         }
 
         if (filters.fecha_inicio) {

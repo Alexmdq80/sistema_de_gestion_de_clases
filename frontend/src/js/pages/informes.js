@@ -1,6 +1,6 @@
 import { apiClient } from '../api/client.js';
 import { displayApiError } from '../utils/errors.js';
-import { formatDate, formatTime, formatDateReadable } from '../utils/formatting.js';
+import { formatDate, formatTime, formatDateReadable, formatDateDashes } from '../utils/formatting.js';
 
 export class InformesPage {
     constructor(container) {
@@ -537,8 +537,10 @@ export class InformesPage {
                         </thead>
                         <tbody>
                             ${alquileres.map((a, index) => {
-                                const dateStr = formatDate(a.fecha);
-                                const [year, month, day] = dateStr.split('-');
+                                const dateStr = formatDateDashes(a.fecha);
+                                // Ensure we have YYYY-MM-DD for reliable splitting regardless of input type
+                                const isoDate = formatDate(a.fecha);
+                                const [year, month, day] = isoDate.split('-');
                                 const dateObj = new Date(year, month - 1, day);
                                 const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
                                 const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
@@ -636,15 +638,14 @@ export class InformesPage {
                                     <td><strong>${item.numero_socio || '-'}</strong></td>
                                     <td>${item.nombre_completo}</td>
                                     <td>${item.dni || '-'}</td>
-                                    <td>${item.fecha_nacimiento ? formatDate(item.fecha_nacimiento) : '-'}</td>
+                                    <td>${item.fecha_nacimiento ? formatDateDashes(item.fecha_nacimiento) : '-'}</td>
                                     <td><small>${item.telefono || '-'}</small></td>
                                     <td><small>${item.email || '-'}</small></td>
                                     <td><small>${item.direccion || '-'}</small></td>
                                     ${!isSedeFiltered ? `<td>${item.sede_nombre}</td>` : ''}
                                     <td><span class="badge badge-light">${item.categoria_cuota}</span></td>
                                     <td class="text-right">${item.monto !== null && item.monto !== undefined ? '$' + parseFloat(item.monto).toFixed(2) : '-'}</td>
-                                </tr>
-                            `).join('')}
+                                    </tr>                            `).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -686,11 +687,10 @@ export class InformesPage {
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
                                 <td>${item.practicante_nombre}</td>
                                 <td>${item.mes_abono}</td>
-                                <td>${formatDate(item.fecha_pago)}</td>
+                                <td>${formatDateDashes(item.fecha_pago)}</td>
                                 <td class="text-right">$${parseFloat(item.monto).toFixed(2)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
+                                </tr>
+                                `).join('')}                    </tbody>
                     <tfoot>
                         <tr class="font-weight-bold" style="font-size: 1.2rem; background: #f8f9fa;">
                             <td colspan="${isSedeFiltered ? '4' : '5'}" class="text-right">TOTAL RECAUDADO:</td>
@@ -729,8 +729,10 @@ export class InformesPage {
                     </thead>
                     <tbody>
                         ${this.data.map((item, index) => {
-                            const dateStr = formatDate(item.fecha);
-                            const [year, month, day] = dateStr.split('-');
+                            const dateStr = formatDateDashes(item.fecha);
+                            // Ensure YYYY-MM-DD for reliable splitting
+                            const isoDate = formatDate(item.fecha);
+                            const [year, month, day] = isoDate.split('-');
                             const dateObj = new Date(year, month - 1, day);
                             const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
                             const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
@@ -742,7 +744,7 @@ export class InformesPage {
                                 <td>${capitalizedDay} ${dateStr} <small>(${item.hora.substring(0, 5)} hs)</small></td>
                                 <td>${item.actividad_nombre}</td>
                                 <td class="text-right font-weight-bold">$${parseFloat(item.monto_pagado || 0).toFixed(2)}</td>
-                                <td>${formatDate(item.fecha_pago)}</td>
+                                <td>${formatDateDashes(item.fecha_pago)}</td>
                             </tr>
                         `}).join('')}
                     </tbody>
