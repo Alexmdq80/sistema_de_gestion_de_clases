@@ -140,17 +140,23 @@ router.get('/alquiler-espacios', asyncHandler(async (req, res) => {
         FROM Clase c
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id
-        WHERE c.deleted_at IS NULL AND c.pago_espacio_realizado = 1
+        WHERE c.deleted_at IS NULL AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0)
     `;
     const params = [];
 
-    if (fecha_inicio) {
-        sql += ' AND c.fecha >= ?';
-        params.push(fecha_inicio);
-    }
-    if (fecha_fin) {
-        sql += ' AND c.fecha <= ?';
-        params.push(fecha_fin);
+    if (fecha_inicio && fecha_fin) {
+        // ALWAYS filter by Payment Date (or fallback to Class Date if not set) for Rental Reports
+        sql += ' AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ? AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?';
+        params.push(fecha_inicio, fecha_fin);
+    } else {
+        if (fecha_inicio) {
+            sql += ' AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ?';
+            params.push(fecha_inicio);
+        }
+        if (fecha_fin) {
+            sql += ' AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?';
+            params.push(fecha_fin);
+        }
     }
     if (lugar_id) {
         sql += ' AND (l.id = ? OR l.parent_id = ?)';
@@ -168,7 +174,7 @@ router.get('/alquiler-espacios', asyncHandler(async (req, res) => {
  * Informe fusionado de Cuotas y Alquileres
  */
 router.get('/consolidado-sede', asyncHandler(async (req, res) => {
-    const { mes, anio, lugar_id } = req.query;
+    const { mes, anio, lugar_id, criterio = 'pago' } = req.query;
     if (!lugar_id) throw new AppError('Debe seleccionar una sede para el informe consolidado', 400);
 
     // 1. Obtener Cuotas Sociales
@@ -209,9 +215,9 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id
         WHERE c.deleted_at IS NULL 
-        AND (c.pago_espacio_realizado = 1 OR c.estado IN ('cancelada', 'suspendida'))
+        AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0 OR c.estado IN ('cancelada', 'suspendida'))
         AND (l.id = ? OR l.parent_id = ?)
-        AND c.fecha >= ? AND c.fecha <= ?
+        AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ? AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?
     `;
     const paramsAlquileres = [lugar_id, lugar_id, firstDay, lastDay];
 

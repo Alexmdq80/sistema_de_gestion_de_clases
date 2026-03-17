@@ -352,6 +352,44 @@ export class PracticanteDetail {
         </div>
       </div>
 
+      <!-- Partial Payment Modal -->
+      <div id="partial-payment-modal" class="modal">
+        <div class="modal-content">
+          <span class="close-button" id="close-partial-payment-modal">&times;</span>
+          <h2 id="partial-payment-modal-title">Registrar Pago Parcial</h2>
+          <form id="partial-payment-form">
+            <input type="hidden" id="partial-abono-id" name="abono_id" />
+            <div class="form-group">
+              <label for="partial-saldo-pendiente">Saldo Pendiente:</label>
+              <input type="text" id="partial-saldo-pendiente" class="form-control" readonly />
+            </div>
+            <div class="form-group">
+              <label for="partial-monto-input">Importe a Abonar ($):</label>
+              <input type="number" id="partial-monto-input" name="monto" step="0.01" required />
+            </div>
+            <div class="form-group">
+              <label for="partial-fecha-pago-input">Fecha de Pago:</label>
+              <input type="date" id="partial-fecha-pago-input" name="fecha_pago" required />
+            </div>
+            <div class="form-group">
+              <label for="partial-metodo-pago-select">Método de Pago:</label>
+              <select id="partial-metodo-pago-select" name="metodo_pago" required>
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="partial-notas-textarea">Notas:</label>
+              <textarea id="partial-notas-textarea" name="notas" rows="3"></textarea>
+            </div>
+            <button type="submit" id="partial-payment-submit-btn" class="btn btn-primary">Confirmar Abono</button>
+            <p class="error-message" id="partial-payment-error-message" style="display: none; color: red;"></p>
+          </form>
+        </div>
+      </div>
+
       <style>
         dl {
           margin-bottom: 1.5rem;
@@ -671,12 +709,29 @@ export class PracticanteDetail {
         });
     }
 
+    const partialPaymentModal = this.container.querySelector('#partial-payment-modal');
+    const closePartialPaymentModalBtn = this.container.querySelector('#close-partial-payment-modal');
+    const partialPaymentForm = this.container.querySelector('#partial-payment-form');
+
+    if (closePartialPaymentModalBtn) {
+      closePartialPaymentModalBtn.addEventListener('click', () => {
+        partialPaymentModal.style.display = 'none';
+      });
+    }
+
+    if (partialPaymentForm) {
+      partialPaymentForm.addEventListener('submit', this.handlePartialPaymentSubmit.bind(this));
+    }
+
     window.addEventListener('click', (event) => {
         if (event.target == paymentModal) {
             paymentModal.style.display = 'none';
         }
         if (event.target == cuotaModal) {
             cuotaModal.style.display = 'none';
+        }
+        if (event.target == partialPaymentModal) {
+            partialPaymentModal.style.display = 'none';
         }
     });
 
@@ -872,6 +927,86 @@ export class PracticanteDetail {
     }
   }
 
+  /**
+   * Handles the submission of the partial payment form.
+   * Performs client-side validation, sends the request to the backend,
+   * and handles success/error responses.
+   * @param {Event} event - The form submission event.
+   */
+  async handlePartialPaymentSubmit(event) {
+    event.preventDefault();
+    const partialPaymentForm = this.container.querySelector('#partial-payment-form');
+    const abonoIdInput = partialPaymentForm.querySelector('#partial-abono-id');
+    const montoInput = partialPaymentForm.querySelector('#partial-monto-input');
+    const fechaPagoInput = partialPaymentForm.querySelector('#partial-fecha-pago-input');
+    const metodoPagoSelect = partialPaymentForm.querySelector('#partial-metodo-pago-select');
+    const notasTextarea = partialPaymentForm.querySelector('#partial-notas-textarea');
+    const errorMessageElement = partialPaymentForm.querySelector('#partial-payment-error-message');
+    const submitBtn = partialPaymentForm.querySelector('#partial-payment-submit-btn');
+
+    // Hide any previous error messages
+    errorMessageElement.style.display = 'none';
+
+    // 2.1 Client-side validation: Ensure amount and date are valid
+    const monto = parseFloat(montoInput.value);
+    const fecha_pago = fechaPagoInput.value;
+
+    if (isNaN(monto) || monto <= 0) {
+        errorMessageElement.textContent = 'El importe a abonar debe ser un número mayor que cero.';
+        errorMessageElement.style.display = 'block';
+        return;
+    }
+
+    if (!fecha_pago) {
+        errorMessageElement.textContent = 'La fecha de pago es obligatoria.';
+        errorMessageElement.style.display = 'block';
+        return;
+    }
+
+    try {
+        // Disable submit button and show loading state
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Procesando...';
+
+        const abono_id = abonoIdInput.value;
+        const metodo_pago = metodoPagoSelect.value;
+        const notas = notasTextarea.value;
+
+        // Construct the payload for the POST /api/pagos/partial endpoint
+        const payload = {
+            practicante_id: this.practicante.id,
+            abono_id: parseInt(abono_id, 10),
+            monto: monto,
+            fecha_pago: fecha_pago,
+            metodo_pago: metodo_pago,
+            notas: notas
+        };
+
+        // 2.4 Make the API call using the client helper
+        await makeRequest(
+            '/pagos/partial',
+            'POST',
+            payload,
+            true
+        );
+
+        // 2.5 Successful handling: feedback, close modal, and refresh UI
+        showSuccess('Pago parcial registrado correctamente.', this.container);
+        this.container.querySelector('#partial-payment-modal').style.display = 'none';
+        
+        // Refresh only the history section to show the new payment and updated balance
+        this.loadPaymentHistory(); 
+    } catch (error) {
+        // 2.6 UI error handling: display API errors to the user
+        console.error('Error al registrar pago parcial:', error);
+        displayApiError(error, errorMessageElement);
+    } finally {
+        // Restore submit button state
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Confirmar Abono';
+    }
+  }
+
   openCreatePaymentModal() {
     this.isEditingPayment = false;
     this.currentPagoId = null;
@@ -897,6 +1032,39 @@ export class PracticanteDetail {
     
     modal.style.display = 'block';
     this.updateAbonoDetails();
+  }
+
+  /**
+   * Opens the partial payment modal and initializes it with the provided abono data.
+   * @param {number|string} abonoId - The ID of the abono to pay for.
+   * @param {number|string} saldoPendiente - The current outstanding balance for this abono.
+   */
+  openPartialPaymentModal(abonoId, saldoPendiente) {
+    const modal = this.container.querySelector('#partial-payment-modal');
+    const form = modal.querySelector('#partial-payment-form');
+    
+    // Reset form to clear previous values and error messages
+    form.reset();
+    const errorMessageElement = form.querySelector('#partial-payment-error-message');
+    if (errorMessageElement) errorMessageElement.style.display = 'none';
+
+    // Populate hidden abono_id for the submission payload
+    form.querySelector('#partial-abono-id').value = abonoId;
+    
+    // Display saldo pendiente as a read-only reference for the user
+    const saldo = parseFloat(saldoPendiente) || 0;
+    form.querySelector('#partial-saldo-pendiente').value = saldo.toFixed(2);
+
+    // Set default payment date to today
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    form.querySelector('#partial-fecha-pago-input').value = todayStr;
+    
+    // Set suggested amount to the pending balance
+    form.querySelector('#partial-monto-input').value = saldo.toFixed(2);
+
+    // Show the modal
+    modal.style.display = 'block';
   }
 
   async loadPaymentHistory() {
@@ -982,16 +1150,21 @@ export class PracticanteDetail {
             
             // Attach events
             historyContainer.querySelectorAll('.delete-pago-btn').forEach(btn => {
-                btn.onclick = () => {
-                    const pago = pagos.find(p => p.id == btn.dataset.id);
-                    this.handleDeletePago(pago);
-                };
+                btn.addEventListener('click', () => {
+                    const pagoId = btn.getAttribute('data-id');
+                    const pago = pagos.find(p => p.id == pagoId);
+                    if (pago) {
+                        this.handleDeletePago(pago);
+                    }
+                });
             });
 
             historyContainer.querySelectorAll('.add-partial-btn').forEach(btn => {
-                btn.onclick = () => {
-                    this.openPartialPaymentModal(btn.dataset.abonoId, btn.dataset.saldo);
-                };
+                btn.addEventListener('click', () => {
+                    const abonoId = btn.getAttribute('data-abono-id');
+                    const saldo = btn.getAttribute('data-saldo');
+                    this.openPartialPaymentModal(abonoId, saldo);
+                });
             });
         } else {
             historyContainer.innerHTML = '<p class="text-muted">No hay historial de pagos para este practicante.</p>';

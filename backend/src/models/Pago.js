@@ -84,7 +84,9 @@ export class Pago {
                     (SELECT JSON_ARRAYAGG(horario_id) FROM TipoAbono_Horario WHERE tipo_abono_id = ta.id) as schedules,
                     'ingreso' as pago_tipo,
                     ta.id as tipo_abono_id,
-                    pr.es_profesor
+                    pr.es_profesor,
+                    NULL as fecha_clase,           -- ADDED
+                    NULL as fecha_pago_clase       -- ADDED
                 FROM Pago p
                 LEFT JOIN Abono a ON p.abono_id = a.id
                 LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
@@ -111,7 +113,9 @@ export class Pago {
                     '[]' as schedules,
                     'egreso' as pago_tipo,
                     NULL as tipo_abono_id,
-                    1 as es_profesor
+                    1 as es_profesor,
+                    c.fecha as fecha_clase,           -- ADDED
+                    c.fecha_pago_espacio as fecha_pago_clase -- ADDED
                 FROM Clase c
                 JOIN Lugar l ON c.lugar_id = l.id
                 JOIN Practicante p ON c.profesor_id = p.id
@@ -136,7 +140,9 @@ export class Pago {
                     '[]' as schedules,
                     'egreso' as pago_tipo,
                     NULL as tipo_abono_id,
-                    pr.es_profesor
+                    pr.es_profesor,
+                    NULL as fecha_clase,           -- ADDED
+                    NULL as fecha_pago_clase       -- ADDED
                 FROM PagoSocio ps
                 JOIN Socio s ON ps.socio_id = s.id
                 JOIN Practicante pr ON s.practicante_id = pr.id
@@ -158,29 +164,38 @@ export class Pago {
         }
 
         if (filters.mes) {
+            const monthNames = [
+                'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+            ];
+            const mesNombre = monthNames[filters.mes - 1];
+
             if (filters.filter_by_mes_abono && filters.anio) {
-                const monthNames = [
-                    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-                ];
-                const mesNombre = monthNames[filters.mes - 1];
-
-                // For incomes use mes_abono with LIKE to support both formats, for expenses use MONTH(fecha)
-                sql += ' AND ((pago_tipo = \'ingreso\' AND mes_abono LIKE ?) OR (pago_tipo = \'egreso\' AND MONTH(fecha) = ?))';
-                params.push(`%${mesNombre}%${filters.anio}%`, filters.mes);
-
+                // ACCRUAL MODE (Mes Devengado)
+                // Incomes & Social Fee Expenses: Filter by mes_abono LIKE
+                // Rental Expenses: ALWAYS by payment date (fecha in UNION)
+                sql += ` AND (
+                    ((pago_tipo = 'ingreso' OR tipo_abono_nombre = 'Egreso Cuota Social (Club)') AND mes_abono LIKE ?) 
+                    OR 
+                    (tipo_abono_nombre = 'Costo de Espacio' AND MONTH(fecha) = ? AND YEAR(fecha) = ?)
+                )`;
+                params.push(`%${mesNombre}%${filters.anio}%`, filters.mes, filters.anio);
             } else {
-                sql += ' AND MONTH(fecha) = ?';
-                params.push(filters.mes);
+                // CASH FLOW MODE (Caja)
+                // EVERYTHING by payment/movement date (fecha in UNION)
+                if (filters.anio) {
+                    sql += ' AND MONTH(fecha) = ? AND YEAR(fecha) = ?';
+                    params.push(filters.mes, filters.anio);
+                } else {
+                    sql += ' AND MONTH(fecha) = ?';
+                    params.push(filters.mes);
+                }
             }
-        }
-
-        if (filters.anio) {
-            // If filter_by_mes_abono is active, the year is already included in mes_abono for incomes,
-            // but we still need YEAR(fecha) for egresos.
-            if (filters.filter_by_mes_abono && filters.mes) {
-                sql += ' AND ((pago_tipo = \'ingreso\') OR (pago_tipo = \'egreso\' AND YEAR(fecha) = ?))';
-                params.push(filters.anio);
+        } else if (filters.anio) {
+            // ONLY YEAR FILTER
+            if (filters.filter_by_mes_abono) {
+                sql += ' AND ( (pago_tipo = \'ingreso\' AND mes_abono LIKE ?) OR (tipo_abono_nombre = \'Costo de Espacio\' AND YEAR(fecha) = ?) OR (tipo_abono_nombre = \'Egreso Cuota Social (Club)\' AND mes_abono LIKE ?) )';
+                params.push(`%${filters.anio}%`, filters.anio, `%${filters.anio}%`);
             } else {
                 sql += ' AND YEAR(fecha) = ?';
                 params.push(filters.anio);

@@ -50,10 +50,12 @@ export class Clase {
 
         if (filters.fecha_inicio && filters.fecha_inicio !== '' && filters.fecha_fin && filters.fecha_fin !== '') {
             if (filters.include_paid_in_range) {
-                // Return class if either session date OR payment date is in range
-                sql += ' AND ((c.fecha >= ? AND c.fecha <= ?) OR (c.fecha_pago_espacio >= ? AND c.fecha_pago_espacio <= ?))';
-                params.push(filters.fecha_inicio, filters.fecha_fin, filters.fecha_inicio, filters.fecha_fin);
+                // Return class where the movement date (COALESCE(payment_date, session_date)) is in range.
+                // This respects the payment month and avoids duplication if class date and payment date differ.
+                sql += ' AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ? AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?';
+                params.push(filters.fecha_inicio, filters.fecha_fin);
             } else {
+                // Accrual Mode (Mes Devengado): Only session date in range
                 sql += ' AND c.fecha >= ? AND c.fecha <= ?';
                 params.push(filters.fecha_inicio, filters.fecha_fin);
             }

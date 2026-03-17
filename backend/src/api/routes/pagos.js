@@ -47,7 +47,7 @@ router.get('/', asyncHandler(async (req, res) => {
     * Register an additional payment for an existing abono
     */
     router.post('/partial', asyncHandler(async (req, res) => {
-    const { abono_id, monto, metodo_pago, fecha, notas } = req.body;
+    const { abono_id, monto, metodo_pago, fecha_pago, notas } = req.body;
     const userId = req.user.userId;
 
     if (!abono_id || !monto) {
@@ -58,7 +58,7 @@ router.get('/', asyncHandler(async (req, res) => {
         parseInt(abono_id, 10),
         parseFloat(monto),
         metodo_pago,
-        fecha,
+        fecha_pago,
         notas,
         userId
     );

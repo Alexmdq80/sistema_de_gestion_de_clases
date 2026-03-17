@@ -77,15 +77,20 @@ export class DeudasPage {
                             <tr>
                                 <td>${formatDateReadable(d.fecha)}</td>
                                 <td><strong>${d.practicante_nombre}</strong></td>
-                                <td>${d.concepto}</td>
+                                <td>
+                                    <span class="badge ${d.tipo === 'abono' ? 'badge-info' : 'badge-light'} mr-1">${d.tipo.toUpperCase()}</span>
+                                    ${d.concepto}
+                                </td>
                                 <td><strong>$${parseFloat(d.monto).toFixed(2)}</strong></td>
                                 <td><span class="badge ${this.getBadgeClass(d.estado)}">${d.estado.toUpperCase()}</span></td>
                                 <td>
                                     ${d.estado === 'pendiente' ? `
-                                        <button class="btn btn-sm btn-success pay-deuda-btn" data-id="${d.id}"><i class="fas fa-check"></i> Pagar</button>
-                                        <button class="btn btn-sm btn-outline-danger cancel-deuda-btn" data-id="${d.id}"><i class="fas fa-times"></i> Anular</button>
+                                        <button class="btn btn-sm btn-success pay-deuda-btn" data-id="${d.id}" data-tipo="${d.tipo}" title="Pagar total"><i class="fas fa-check"></i> Pagar</button>
+                                        <button class="btn btn-sm btn-outline-danger cancel-deuda-btn" data-id="${d.id}" data-tipo="${d.tipo}" title="Anular"><i class="fas fa-times"></i> Anular</button>
                                     ` : ''}
-                                    <button class="btn btn-sm btn-outline-secondary delete-deuda-btn" data-id="${d.id}"><i class="fas fa-trash"></i></button>
+                                    ${d.tipo === 'manual' ? `
+                                        <button class="btn btn-sm btn-outline-secondary delete-deuda-btn" data-id="${d.id}"><i class="fas fa-trash"></i></button>
+                                    ` : ''}
                                 </td>
                             </tr>
                         `).join('')}
@@ -95,11 +100,11 @@ export class DeudasPage {
         `;
 
         content.querySelectorAll('.pay-deuda-btn').forEach(btn => {
-            btn.onclick = () => this.handlePay(parseInt(btn.dataset.id));
+            btn.onclick = () => this.handlePay(parseInt(btn.dataset.id), btn.dataset.tipo);
         });
 
         content.querySelectorAll('.cancel-deuda-btn').forEach(btn => {
-            btn.onclick = () => this.handleCancel(parseInt(btn.dataset.id));
+            btn.onclick = () => this.handleCancel(parseInt(btn.dataset.id), btn.dataset.tipo);
         });
 
         content.querySelectorAll('.delete-deuda-btn').forEach(btn => {
@@ -116,20 +121,26 @@ export class DeudasPage {
         return map[estado] || 'badge-secondary';
     }
 
-    async handlePay(id) {
-        if (!confirm('¿Marcar esta deuda como pagada?')) return;
+    async handlePay(id, tipo = 'manual') {
+        const msg = tipo === 'abono' 
+            ? '¿Registrar el pago total del saldo pendiente de este abono?' 
+            : '¿Marcar esta deuda como pagada?';
+        if (!confirm(msg)) return;
         try {
-            await apiClient.put(`/deudas/${id}/pagar`);
-            showSuccess('Deuda pagada');
+            await apiClient.put(`/deudas/${id}/pagar?tipo=${tipo}`);
+            showSuccess(tipo === 'abono' ? 'Pago registrado y saldo cancelado' : 'Deuda pagada');
             await this.loadData();
         } catch (error) { displayApiError(error); }
     }
 
-    async handleCancel(id) {
-        if (!confirm('¿Seguro que desea anular esta deuda?')) return;
+    async handleCancel(id, tipo = 'manual') {
+        const msg = tipo === 'abono' 
+            ? '¿Seguro que desea cancelar este abono y anular su deuda? (El abono pasará a estado cancelado)' 
+            : '¿Seguro que desea anular esta deuda?';
+        if (!confirm(msg)) return;
         try {
-            await apiClient.put(`/deudas/${id}/cancelar`);
-            showSuccess('Deuda anulada');
+            await apiClient.put(`/deudas/${id}/cancelar?tipo=${tipo}`);
+            showSuccess(tipo === 'abono' ? 'Abono y deuda anulados' : 'Deuda anulada');
             await this.loadData();
         } catch (error) { displayApiError(error); }
     }

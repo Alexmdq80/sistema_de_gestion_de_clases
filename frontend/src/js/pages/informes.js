@@ -49,7 +49,7 @@ export class InformesPage {
                             <!-- Populated dynamically -->
                         </select>
                     </div>
-                    <div class="form-group col-md-2 mb-md-0" id="basis-container" style="display: ${this.currentReport === 'balance' ? 'block' : 'none'}">
+                    <div class="form-group col-md-2 mb-md-0" id="basis-container" style="display: ${['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none'}">
                         <select class="form-control" id="report-basis" title="Criterio de fecha">
                             <option value="pago" ${this.reportBasis === 'pago' ? 'selected' : ''}>Fecha Pago (Caja)</option>
                             <option value="mes" ${this.reportBasis === 'mes' ? 'selected' : ''}>Mes Devengado</option>
@@ -109,7 +109,7 @@ export class InformesPage {
 
             const basisContainer = this.container.querySelector('#basis-container');
             if (basisContainer) {
-                basisContainer.style.display = this.currentReport === 'balance' ? 'block' : 'none';
+                basisContainer.style.display = ['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none';
             }
             this.loadReport();
         };

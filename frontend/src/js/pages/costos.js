@@ -13,6 +13,7 @@ export class CostosPage {
         this.clases = [];
         this.movimientos = [];
         this.categorias = [];
+        this.filterByMesAbono = false;
         this.filters = {};
         this.updateFiltersFromMonthYear();
     }
@@ -271,6 +272,11 @@ export class CostosPage {
             this.loadData();
         };
 
+        this.container.querySelector('#filter-by-mes-abono-caja').onchange = (e) => {
+            this.filterByMesAbono = e.target.checked;
+            this.loadData();
+        };
+
         // Movimiento Caja Modal
         const movModal = this.container.querySelector('#movimiento-modal');
         const movCatSelect = movModal.querySelector('#mov-categoria');
@@ -398,20 +404,27 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             // 2. Clases que se PAGARON en el rango (aunque hayan ocurrido antes)
             const clasesFilters = { 
                 ...this.filters,
-                include_paid_in_range: true // Indicación para el backend (si lo soporta) o para coherencia
+                include_paid_in_range: true // ALWAYS TRUE for rentals to respect the payment month
+            };
+
+            const clasesForHoursFilters = {
+                ...this.filters,
+                include_paid_in_range: false // Accrual mode to count hours that actually happened in the period
             };
 
             const results = await Promise.allSettled([
                 apiClient.get('/asistencia/clases', clasesFilters),
                 apiClient.get('/caja', this.filters),
                 apiClient.get('/categorias-caja'),
-                apiClient.get('/pagos', pagosParams)
+                apiClient.get('/pagos', pagosParams),
+                apiClient.get('/asistencia/clases', clasesForHoursFilters)
             ]);
             
             this.clases = results[0].status === 'fulfilled' ? results[0].value.data : [];
             this.movimientos = results[1].status === 'fulfilled' ? results[1].value.data : [];
             this.categorias = results[2].status === 'fulfilled' ? (results[2].value.data || []) : [];
             this.pagosAbonos = results[3].status === 'fulfilled' ? (results[3].value.data || []) : [];
+            this.clasesForHours = results[4].status === 'fulfilled' ? (results[4].value.data || []) : [];
             
             // Log errors if any
             results.forEach((r, i) => {
@@ -525,7 +538,8 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         const ahorroNegociacion = totalExpectedClases - totalPaidClases;
 
         // Cálculo de Horas (Solo realizadas o programadas, no canceladas/suspendidas)
-        const totalHoras = this.clases
+        // Usamos clasesForHours para asegurar que contamos las clases que OCURRIERON en el mes (Devengado)
+        const totalHoras = (this.clasesForHours || [])
             .filter(c => !['cancelada', 'suspendida'].includes(c.estado))
             .reduce((acc, c) => {
                 const start = new Date(`2000-01-01T${c.hora}`);
