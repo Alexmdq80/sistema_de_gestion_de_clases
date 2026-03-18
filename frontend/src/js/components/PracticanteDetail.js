@@ -1082,12 +1082,28 @@ export class PracticanteDetail {
             // Agrupar pagos por abono para calcular saldos
             const abonosMap = new Map();
             for (const p of pagos) {
-                if (p.abono_id) {
-                    if (!abonosMap.has(p.abono_id)) {
-                        // Obtener balance del abono desde el servidor
-                        const balanceRes = await makeRequest(`/pagos/abono/${p.abono_id}/balance`, 'GET', null, true);
-                        abonosMap.set(p.abono_id, balanceRes.data);
+                if (p.abono_id && !abonosMap.has(p.abono_id)) {
+                    // Obtener balance del abono desde el servidor
+                    const balanceRes = await makeRequest(`/pagos/abono/${p.abono_id}/balance`, 'GET', null, true);
+                    const balanceData = balanceRes.data;
+                    
+                    // Calcular saldos históricos para cada pago de este abono
+                    // Los pagos están en 'pagos', ordenados DESC por defecto.
+                    // Para el cálculo progresivo necesitamos orden cronológico ASC.
+                    const abonoPagos = pagos.filter(pg => pg.abono_id === p.abono_id)
+                                            .sort((a, b) => new Date(a.fecha) - new Date(b.fecha) || a.id - b.id);
+                    
+                    let acumulado = 0;
+                    const saldosHistoricos = {};
+                    for (const ap of abonoPagos) {
+                        acumulado += parseFloat(ap.monto);
+                        saldosHistoricos[ap.id] = parseFloat(balanceData.monto_pactado || 0) - acumulado;
                     }
+                    
+                    abonosMap.set(p.abono_id, {
+                        ...balanceData,
+                        saldosHistoricos
+                    });
                 }
             }
 
@@ -1112,19 +1128,36 @@ export class PracticanteDetail {
                             let actionsHtml = `<button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}" title="Eliminar"><i class="fas fa-trash"></i></button>`;
 
                             if (pago.abono_id && abonosMap.has(pago.abono_id)) {
-                                const balance = abonosMap.get(pago.abono_id);
-                                if (parseFloat(balance.saldo_pendiente) > 0.01) {
-                                    balanceHtml = `<span class="text-danger" style="font-weight:bold;">Debe $${parseFloat(balance.saldo_pendiente).toFixed(2)}</span>`;
-                                    // Solo mostrar botón de "Abonar" en el pago más reciente del abono para no duplicar botones
-                                    const esUltimoPago = pagos.find(pg => pg.abono_id === pago.abono_id).id === pago.id;
+                                const abonoInfo = abonosMap.get(pago.abono_id);
+                                const saldoPendienteAlMomento = abonoInfo.saldosHistoricos[pago.id];
+                                // El "último pago" es el primero que encontramos en el array 'pagos' (que está en DESC)
+                                const esUltimoPago = pagos.find(pg => pg.abono_id === pago.abono_id).id === pago.id;
+                                
+                                if (saldoPendienteAlMomento > 0.01) {
                                     if (esUltimoPago) {
+                                        balanceHtml = `<span class="text-danger" style="font-weight:bold;">Debe $${saldoPendienteAlMomento.toFixed(2)}</span>`;
                                         actionsHtml = `
-                                            <button class="btn btn-primary btn-sm add-partial-btn" data-abono-id="${pago.abono_id}" data-saldo="${balance.saldo_pendiente}" title="Registrar pago de saldo">Abonar</button>
+                                            <button class="btn btn-primary btn-sm add-partial-btn" data-abono-id="${pago.abono_id}" data-saldo="${saldoPendienteAlMomento.toFixed(2)}" title="Registrar pago de saldo">Abonar</button>
                                             ${actionsHtml}
                                         `;
+                                    } else {
+                                        balanceHtml = `<span class="text-muted">Parcial (Saldo: $${saldoPendienteAlMomento.toFixed(2)})</span>`;
                                     }
-                                } else if (parseFloat(balance.saldo_pendiente) < -0.01) {
-                                    balanceHtml = `<span class="text-info">Saldo a favor: $${Math.abs(balance.saldo_pendiente).toFixed(2)}</span>`;
+                                    
+                                    if (abonoInfo.estado === 'cancelado') {
+                                        balanceHtml += ' <br><small class="badge badge-secondary" style="font-size: 0.65rem;">Cancelado</small>';
+                                    }
+                                } else if (abonoInfo.estado === 'cancelado') {
+                                    balanceHtml = '<span class="badge badge-secondary">Cancelado</span>';
+                                } else if (saldoPendienteAlMomento < -0.01) {
+                                    // Para saldos a favor, solo mostrar el detalle en el último registro para evitar confusión
+                                    if (esUltimoPago) {
+                                        balanceHtml = `<span class="text-info">Saldo a favor: $${Math.abs(saldoPendienteAlMomento).toFixed(2)}</span>`;
+                                    } else {
+                                        balanceHtml = `<span class="badge badge-warning">Parcial</span>`;
+                                    }
+                                } else {
+                                    balanceHtml = '<span class="badge badge-success">Pagado</span>';
                                 }
                             }
 
