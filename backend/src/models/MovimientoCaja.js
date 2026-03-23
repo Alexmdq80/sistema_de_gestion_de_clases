@@ -12,6 +12,8 @@ export class MovimientoCaja {
         this.descripcion = data.descripcion || null;
         this.fecha = data.fecha;
         this.lugar_id = data.lugar_id || null;
+        this.clase_id = data.clase_id || null;
+        this.usado_en_clase_id = data.usado_en_clase_id || null;
         this.practicante_id = data.practicante_id || null;
         this.usuario_id = data.usuario_id;
         this.created_at = data.created_at || null;
@@ -82,8 +84,8 @@ export class MovimientoCaja {
 
     static async create(data) {
         const sql = `
-            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, practicante_id, usuario_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, clase_id, usado_en_clase_id, practicante_id, usuario_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const values = [
             data.tipo,
@@ -92,6 +94,8 @@ export class MovimientoCaja {
             data.descripcion || null,
             data.fecha,
             data.lugar_id || null,
+            data.clase_id || null,
+            data.usado_en_clase_id || null,
             data.practicante_id || null,
             data.usuario_id
         ];
@@ -101,7 +105,7 @@ export class MovimientoCaja {
     }
 
     static async update(id, data) {
-        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'lugar_id', 'practicante_id'];
+        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'lugar_id', 'clase_id', 'usado_en_clase_id', 'practicante_id'];
         const updates = [];
         const values = [];
 
@@ -127,6 +131,39 @@ export class MovimientoCaja {
         return result.affectedRows > 0;
     }
 
+    /**
+     * Delete (soft-delete) movements by class ID
+     * @param {number} claseId 
+     * @returns {Promise<boolean>}
+     */
+    static async deleteByClaseId(claseId) {
+        const sql = 'UPDATE MovimientoCaja SET deleted_at = CURRENT_TIMESTAMP WHERE clase_id = ? AND deleted_at IS NULL';
+        const [result] = await pool.execute(sql, [claseId]);
+        return result.affectedRows > 0;
+    }
+
+    /**
+     * Delete (soft-delete) movements by description pattern (for legacy credit notes)
+     * @param {string} pattern 
+     * @returns {Promise<boolean>}
+     */
+    static async deleteByDescription(pattern) {
+        const sql = "UPDATE MovimientoCaja SET deleted_at = CURRENT_TIMESTAMP WHERE categoria = 'Nota de Crédito' AND descripcion LIKE ? AND deleted_at IS NULL";
+        const [result] = await pool.execute(sql, [pattern]);
+        return result.affectedRows > 0;
+    }
+
+    /**
+     * Release credit notes used in a specific class (make them available again)
+     * @param {number} claseId 
+     * @returns {Promise<boolean>}
+     */
+    static async releaseByClaseId(claseId) {
+        const sql = 'UPDATE MovimientoCaja SET usado_en_clase_id = NULL WHERE usado_en_clase_id = ? AND deleted_at IS NULL';
+        const [result] = await pool.execute(sql, [claseId]);
+        return result.affectedRows > 0;
+    }
+
     toJSON() {
         return {
             id: this.id,
@@ -137,6 +174,8 @@ export class MovimientoCaja {
             fecha: this.fecha instanceof Date ? this.fecha.toISOString().split('T')[0] : this.fecha,
             lugar_id: this.lugar_id,
             lugar_nombre: this.lugar_nombre,
+            clase_id: this.clase_id,
+            usado_en_clase_id: this.usado_en_clase_id,
             practicante_id: this.practicante_id,
             practicante_nombre: this.practicante_nombre,
             usuario_id: this.usuario_id,

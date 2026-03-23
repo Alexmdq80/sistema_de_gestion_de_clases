@@ -101,7 +101,16 @@ export class Pago {
                 -- Expenses (Costo de Espacio - from Clase)
                 SELECT 
                     c.id * -1 as id, c.profesor_id as practicante_id, NULL as abono_id, NULL as deuda_id, NULL as pago_socio_id, 
-                    NULL as mes_abono, c.lugar_id, 
+                    CONCAT(
+                        CASE MONTH(c.fecha)
+                            WHEN 1 THEN 'Enero' WHEN 2 THEN 'Febrero' WHEN 3 THEN 'Marzo'
+                            WHEN 4 THEN 'Abril' WHEN 5 THEN 'Mayo' WHEN 6 THEN 'Junio'
+                            WHEN 7 THEN 'Julio' WHEN 8 THEN 'Agosto' WHEN 9 THEN 'Septiembre'
+                            WHEN 10 THEN 'Octubre' WHEN 11 THEN 'Noviembre' WHEN 12 THEN 'Diciembre'
+                        END, 
+                        ' ', YEAR(c.fecha)
+                    ) as mes_abono, 
+                    c.lugar_id, 
                     COALESCE(c.fecha_pago_espacio, c.fecha) as fecha, 
                     IFNULL(c.monto_pago_espacio, 0) * -1 as monto, 
                     'transferencia' as metodo_pago, 
@@ -150,6 +159,42 @@ export class Pago {
                 JOIN Practicante pr ON s.practicante_id = pr.id
                 JOIN Lugar l ON s.lugar_id = l.id
                 WHERE ps.deleted_at IS NULL AND ps.fecha_pago IS NOT NULL
+
+                UNION ALL
+
+                -- Other movements (Ventas, Gastos Extra, and specifically NOTA DE CRÉDITO)
+                SELECT 
+                    m.id * -5000 as id, m.practicante_id, NULL as abono_id, NULL as deuda_id, NULL as pago_socio_id, 
+                    CONCAT(
+                        CASE MONTH(m.fecha)
+                            WHEN 1 THEN 'Enero' WHEN 2 THEN 'Febrero' WHEN 3 THEN 'Marzo'
+                            WHEN 4 THEN 'Abril' WHEN 5 THEN 'Mayo' WHEN 6 THEN 'Junio'
+                            WHEN 7 THEN 'Julio' WHEN 8 THEN 'Agosto' WHEN 9 THEN 'Septiembre'
+                            WHEN 10 THEN 'Octubre' WHEN 11 THEN 'Noviembre' WHEN 12 THEN 'Diciembre'
+                        END, 
+                        ' ', YEAR(m.fecha)
+                    ) as mes_abono, 
+                    m.lugar_id, 
+                    m.fecha, 
+                    CASE WHEN m.tipo = 'egreso' THEN m.monto * -1 ELSE m.monto END as monto, 
+                    'efectivo' as metodo_pago, 
+                    m.descripcion as notas, 
+                    m.deleted_at, m.created_at, m.updated_at,
+                    m.categoria as tipo_abono_nombre, 
+                    NULL as categoria, 
+                    COALESCE(pr.nombre_completo, 'Global') as practicante_nombre,
+                    NULL as fecha_vencimiento, 
+                    l.nombre as lugar_nombre,
+                    '[]' as schedules,
+                    m.tipo as pago_tipo,
+                    NULL as tipo_abono_id,
+                    COALESCE(pr.es_profesor, 0) as es_profesor,
+                    NULL as fecha_clase,
+                    NULL as fecha_pago_clase
+                FROM MovimientoCaja m
+                LEFT JOIN Practicante pr ON m.practicante_id = pr.id
+                LEFT JOIN Lugar l ON m.lugar_id = l.id
+                WHERE m.deleted_at IS NULL
             ) as global_pagos
             WHERE 1=1
         `;
@@ -174,14 +219,9 @@ export class Pago {
 
             if (filters.filter_by_mes_abono && filters.anio) {
                 // ACCRUAL MODE (Mes Devengado)
-                // Incomes & Social Fee Expenses: Filter by mes_abono LIKE
-                // Rental Expenses: ALWAYS by payment date (fecha in UNION)
-                sql += ` AND (
-                    ((pago_tipo = 'ingreso' OR tipo_abono_nombre = 'Egreso Cuota Social (Club)') AND mes_abono LIKE ?) 
-                    OR 
-                    (tipo_abono_nombre = 'Costo de Espacio' AND MONTH(fecha) = ? AND YEAR(fecha) = ?)
-                )`;
-                params.push(`%${mesNombre}%${filters.anio}%`, filters.mes, filters.anio);
+                // Filter everything by mes_abono LIKE
+                sql += ' AND mes_abono LIKE ?';
+                params.push(`%${mesNombre}%${filters.anio}%`);
             } else {
                 // CASH FLOW MODE (Caja)
                 // EVERYTHING by payment/movement date (fecha in UNION)
@@ -196,8 +236,8 @@ export class Pago {
         } else if (filters.anio) {
             // ONLY YEAR FILTER
             if (filters.filter_by_mes_abono) {
-                sql += ' AND ( (pago_tipo = \'ingreso\' AND mes_abono LIKE ?) OR (tipo_abono_nombre = \'Costo de Espacio\' AND YEAR(fecha) = ?) OR (tipo_abono_nombre = \'Egreso Cuota Social (Club)\' AND mes_abono LIKE ?) )';
-                params.push(`%${filters.anio}%`, filters.anio, `%${filters.anio}%`);
+                sql += ' AND mes_abono LIKE ?';
+                params.push(`%${filters.anio}%`);
             } else {
                 sql += ' AND YEAR(fecha) = ?';
                 params.push(filters.anio);
@@ -210,7 +250,7 @@ export class Pago {
         }
 
         if (filters.lugar_id) {
-            sql += ' AND (lugar_id = ? OR (SELECT parent_id FROM Lugar WHERE id = lugar_id) = ?)';
+            sql += ' AND (lugar_id = ? OR EXISTS (SELECT 1 FROM Lugar WHERE id = global_pagos.lugar_id AND parent_id = ?))';
             params.push(filters.lugar_id, filters.lugar_id);
         }
 

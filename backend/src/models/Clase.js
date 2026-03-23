@@ -28,6 +28,9 @@ export class Clase {
         this.lugar_nombre = data.lugar_nombre || null;
         this.profesor_nombre = data.profesor_nombre || null;
         this.asistentes_count = data.asistentes_count || 0;
+        this.nota_credito_id = data.nota_credito_id || null;
+        this.nota_credito_monto = data.nota_credito_monto !== undefined ? parseFloat(data.nota_credito_monto) : null;
+        this.tiene_nota_credito = !!this.nota_credito_id;
         
         // Fee data from Lugar
         this.costo_tarifa = data.costo_tarifa !== undefined ? data.costo_tarifa : 0.00;
@@ -39,7 +42,9 @@ export class Clase {
             SELECT c.*, a.nombre as actividad_nombre, l.nombre as lugar_nombre, 
                    p.nombre_completo as profesor_nombre,
                    l.costo_tarifa, l.tipo_tarifa,
-                   (SELECT COUNT(*) FROM Asistencia WHERE clase_id = c.id AND asistio = 1) as asistentes_count
+                   (SELECT COUNT(*) FROM Asistencia WHERE clase_id = c.id AND asistio = 1) as asistentes_count,
+                   (SELECT id FROM MovimientoCaja WHERE usado_en_clase_id = c.id AND deleted_at IS NULL LIMIT 1) as nota_credito_id,
+                   (SELECT monto FROM MovimientoCaja WHERE usado_en_clase_id = c.id AND deleted_at IS NULL LIMIT 1) as nota_credito_monto
             FROM Clase c
             JOIN Actividad a ON c.actividad_id = a.id
             JOIN Lugar l ON c.lugar_id = l.id
@@ -75,8 +80,8 @@ export class Clase {
             params.push(filters.actividad_id);
         }
         if (filters.lugar_id && filters.lugar_id !== '') {
-            sql += ' AND c.lugar_id = ?';
-            params.push(filters.lugar_id);
+            sql += ' AND (c.lugar_id = ? OR l.parent_id = ?)';
+            params.push(filters.lugar_id, filters.lugar_id);
         }
         if (filters.profesor_id && filters.profesor_id !== '') {
             sql += ' AND c.profesor_id = ?';
@@ -98,7 +103,9 @@ export class Clase {
             SELECT c.*, a.nombre as actividad_nombre, l.nombre as lugar_nombre, 
                    p.nombre_completo as profesor_nombre,
                    l.costo_tarifa, l.tipo_tarifa, l.parent_id as lugar_parent_id,
-                   (SELECT COUNT(*) FROM Asistencia WHERE clase_id = c.id AND asistio = 1) as asistentes_count
+                   (SELECT COUNT(*) FROM Asistencia WHERE clase_id = c.id AND asistio = 1) as asistentes_count,
+                   (SELECT id FROM MovimientoCaja WHERE usado_en_clase_id = c.id AND deleted_at IS NULL LIMIT 1) as nota_credito_id,
+                   (SELECT monto FROM MovimientoCaja WHERE usado_en_clase_id = c.id AND deleted_at IS NULL LIMIT 1) as nota_credito_monto
             FROM Clase c
             JOIN Actividad a ON c.actividad_id = a.id
             JOIN Lugar l ON c.lugar_id = l.id
@@ -297,6 +304,9 @@ export class Clase {
             lugar_nombre: this.lugar_nombre,
             profesor_nombre: this.profesor_nombre,
             asistentes_count: this.asistentes_count,
+            nota_credito_id: this.nota_credito_id,
+            nota_credito_monto: this.nota_credito_monto,
+            tiene_nota_credito: this.tiene_nota_credito,
             costo_tarifa: this.costo_tarifa,
             tipo_tarifa: this.tipo_tarifa,
             created_at: this.created_at,

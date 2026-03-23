@@ -26,6 +26,44 @@ export class DeudasPage {
             <div id="deudas-content">
                 <div class="loader text-center p-5">Cargando deudas...</div>
             </div>
+
+            <!-- Modal para Pago de Deuda -->
+            <div id="pago-deuda-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 450px;">
+                    <div class="modal-header">
+                        <h2>Registrar Pago de Deuda</h2>
+                        <span class="close-pago-modal close-button">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="pago-deuda-form">
+                            <input type="hidden" id="pago-deuda-id">
+                            <input type="hidden" id="pago-deuda-tipo">
+                            
+                            <div class="p-3 bg-light border rounded mb-3">
+                                <p class="mb-1"><strong>Practicante:</strong> <span id="pago-practicante-nombre">-</span></p>
+                                <p class="mb-0"><strong>Concepto:</strong> <span id="pago-concepto">-</span></p>
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label for="input-monto-pactado" class="font-weight-bold">Monto Pactado / Total Deuda ($):</label>
+                                <input type="number" id="input-monto-pactado" class="form-control" step="0.01" required>
+                                <small class="text-muted">Monto total reconocido de la deuda.</small>
+                            </div>
+
+                            <div class="form-group mb-4">
+                                <label for="input-monto-pagado" class="font-weight-bold text-success">Monto que entrega ahora ($):</label>
+                                <input type="number" id="input-monto-pagado" class="form-control form-control-lg border-success" step="0.01" required>
+                                <small class="text-info">Importe que el alumno abona en este momento.</small>
+                            </div>
+
+                            <div class="form-actions mt-4">
+                                <button type="submit" class="btn btn-success btn-lg btn-block">Confirmar Pago</button>
+                                <button type="button" class="btn btn-secondary btn-block cancel-pago-modal">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
         `;
 
         this.attachEvents();
@@ -40,6 +78,34 @@ export class DeudasPage {
                 this.loadData();
             });
         }
+
+        const modal = this.container.querySelector('#pago-deuda-modal');
+        const form = this.container.querySelector('#pago-deuda-form');
+
+        this.container.querySelector('.close-pago-modal').onclick = () => modal.style.display = 'none';
+        this.container.querySelector('.cancel-pago-modal').onclick = () => modal.style.display = 'none';
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const id = parseInt(this.container.querySelector('#pago-deuda-id').value, 10);
+            const tipo = this.container.querySelector('#pago-deuda-tipo').value;
+            const monto_esperado = parseFloat(this.container.querySelector('#input-monto-pactado').value);
+            const monto_pago = parseFloat(this.container.querySelector('#input-monto-pagado').value);
+
+            try {
+                await apiClient.put(`/deudas/${id}/pagar?tipo=${tipo}`, {
+                    monto_esperado,
+                    monto_pago
+                });
+                showSuccess('Pago registrado correctamente');
+                modal.style.display = 'none';
+                await this.loadData();
+            } catch (error) { displayApiError(error); }
+        };
+
+        window.onclick = (event) => {
+            if (event.target == modal) modal.style.display = 'none';
+        };
     }
 
     async loadData() {
@@ -128,27 +194,20 @@ export class DeudasPage {
         const deuda = this.deudas.find(d => d.id === id && d.tipo === tipo);
         if (!deuda) return;
 
-        const promptEsperado = prompt(`Confirmar monto TOTAL de la deuda (Monto actual pactado: $${deuda.monto_original}):`, deuda.monto_original);
-        if (promptEsperado === null) return;
-        const monto_esperado = parseFloat(promptEsperado);
+        const modal = this.container.querySelector('#pago-deuda-modal');
+        this.container.querySelector('#pago-deuda-id').value = id;
+        this.container.querySelector('#pago-deuda-tipo').value = tipo;
+        this.container.querySelector('#pago-practicante-nombre').textContent = deuda.practicante_nombre;
+        this.container.querySelector('#pago-concepto').textContent = deuda.concepto;
+        
+        const inputPactado = this.container.querySelector('#input-monto-pactado');
+        const inputPagado = this.container.querySelector('#input-monto-pagado');
+        
+        inputPactado.value = parseFloat(deuda.monto_original).toFixed(2);
+        inputPagado.value = parseFloat(deuda.monto).toFixed(2);
 
-        const promptPago = prompt(`Monto que entrega el alumno ahora (Saldo pendiente: $${deuda.monto}):`, deuda.monto);
-        if (promptPago === null) return;
-        const monto_pago = parseFloat(promptPago);
-
-        if (isNaN(monto_esperado) || isNaN(monto_pago)) {
-            alert('Por favor, ingrese montos válidos.');
-            return;
-        }
-
-        try {
-            await apiClient.put(`/deudas/${id}/pagar?tipo=${tipo}`, {
-                monto_esperado,
-                monto_pago
-            });
-            showSuccess('Pago registrado correctamente');
-            await this.loadData();
-        } catch (error) { displayApiError(error); }
+        modal.style.display = 'block';
+        inputPagado.focus();
     }
 
     async handleCancel(id, tipo = 'manual') {

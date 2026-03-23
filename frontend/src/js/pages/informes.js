@@ -575,7 +575,8 @@ export class InformesPage {
                                 
                                 let actividadDetalle = a.actividad_nombre;
                                 if (isCancelled) {
-                                    const detalle = a.motivo_cancelacion || a.observaciones || '';
+                                    // Para clases canceladas, el usuario prefiere ver el motivo en lugar de las observaciones
+                                    const detalle = a.estado === 'cancelada' ? (a.motivo_cancelacion || '') : (a.motivo_cancelacion || a.observaciones || '');
                                     actividadDetalle += ` <br><small class="text-danger">(${a.estado.toUpperCase()}${detalle ? ': ' + detalle : ''})</small>`;
                                 }
 

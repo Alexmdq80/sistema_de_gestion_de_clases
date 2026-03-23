@@ -159,16 +159,18 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         }
     }
 
-    // NEW: If the class was already paid and is being cancelled, create a credit note (Nota de Crédito)
+    // NEW: If the class was already paid and is being cancelled or suspended, create a credit note (Nota de Crédito)
     // This provides a balance in favor with the Venue.
-    const isBeingCancelled = data.estado === 'cancelada' && clase.estado !== 'cancelada';
+    const isBeingCancelledOrSuspended = ['cancelada', 'suspendida'].includes(data.estado) && !['cancelada', 'suspendida'].includes(clase.estado);
     const wasAlreadyPaid = clase.pago_espacio_realizado === true || data.pago_espacio_realizado === true;
 
-    if (isBeingCancelled && wasAlreadyPaid) {
-        const montoCredito = data.monto_pago_espacio !== undefined ? parseFloat(data.monto_pago_espacio) : (clase.monto_pago_espacio || 0);
+    // We only generate the credit note if the user explicitly checked the box in the UI
+    if (isBeingCancelledOrSuspended && wasAlreadyPaid && data.generar_nota_credito === true) {
+        const montoCredito = data.monto_nota_credito !== undefined ? parseFloat(data.monto_nota_credito) : (clase.monto_pago_espacio || 0);
         
         if (montoCredito > 0) {
-            let descripcion = `Nota de Crédito por Clase Cancelada del ${clase.fecha} (${clase.hora})`;
+            const labelEstado = data.estado === 'cancelada' ? 'Cancelada' : 'Suspendida';
+            let descripcion = `Nota de Crédito por Clase ${labelEstado} del ${clase.fecha} (${clase.hora})`;
             if (data.observaciones || clase.observaciones) {
                 const obs = data.observaciones !== undefined ? data.observaciones : clase.observaciones;
                 if (obs) descripcion += ` - Obs: ${obs}`;
@@ -179,16 +181,64 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
                 monto: montoCredito,
                 categoria: 'Nota de Crédito',
                 descripcion: descripcion,
-                fecha: new Date().toISOString().split('T')[0],
+                fecha: clase.fecha,
                 lugar_id: clase.lugar_id,
+                clase_id: clase.id,
                 usuario_id: userId
             });
         }
     }
 
+    // NEW: If the class is being un-cancelled or un-suspended, remove associated credit note
+    const isReactivating = !['cancelada', 'suspendida'].includes(data.estado) && ['cancelada', 'suspendida'].includes(clase.estado);
+    if (isReactivating) {
+        // Try by class_id first (new robust way)
+        await MovimientoCaja.deleteByClaseId(clase.id);
+        
+        // Also try by description pattern (legacy for notes created before the schema update)
+        const labelAntiguo = clase.estado === 'cancelada' ? 'Cancelada' : 'Suspendida';
+        const pattern = `Nota de Crédito por Clase ${labelAntiguo} del ${clase.fecha} (${clase.hora})%`;
+        await MovimientoCaja.deleteByDescription(pattern);
+    }
+
     // NEW: If unmarking space payment, cancel associated pending debts for this class
+    // AND release any used credit note so it becomes available again.
     if (data.pago_espacio_realizado === false && clase.pago_espacio_realizado === true) {
         await Deuda.cancelByClaseId(clase.id, userId);
+        await MovimientoCaja.releaseByClaseId(clase.id);
+    }
+
+    // NEW: If applying or removing a credit note from the payment
+    if (data.pago_espacio_realizado === true && data.hasOwnProperty('nota_credito_id')) {
+        // First, release any previously used credit note for this class to ensure a clean state
+        await MovimientoCaja.releaseByClaseId(clase.id);
+        
+        // If a new (or same) note ID is provided, apply it
+        if (data.nota_credito_id) {
+            const notaCredito = await MovimientoCaja.findById(data.nota_credito_id);
+            if (notaCredito) {
+                const montoNota = parseFloat(notaCredito.monto);
+                const montoPago = data.monto_pago_espacio !== undefined ? parseFloat(data.monto_pago_espacio) : (clase.monto_pago_espacio || 0);
+
+                // If the note is worth more than the payment, generate a new note for the difference
+                if (montoNota > montoPago) {
+                    const sobrante = montoNota - montoPago;
+                    await MovimientoCaja.create({
+                        tipo: 'ingreso',
+                        monto: sobrante,
+                        categoria: 'Nota de Crédito',
+                        descripcion: `Sobrante de Nota de Crédito ID ${notaCredito.id} aplicada a clase del ${clase.fecha}`,
+                        fecha: clase.fecha,
+                        lugar_id: clase.lugar_id,
+                        usuario_id: userId
+                    });
+                }
+
+                await MovimientoCaja.update(data.nota_credito_id, { 
+                    usado_en_clase_id: id 
+                });
+            }
+        }
     }
 
     const updatedClase = await Clase.update(id, {

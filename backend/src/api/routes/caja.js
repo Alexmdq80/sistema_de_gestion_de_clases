@@ -22,6 +22,37 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * GET /api/caja/notas-credito/:lugar_id
+ * Returns available credit notes (unspent) for a specific location.
+ */
+router.get('/notas-credito/:lugar_id', asyncHandler(async (req, res) => {
+    const lugarId = parseInt(req.params.lugar_id, 10);
+    
+    // We filter by Category 'Nota de Crédito' and specific lugar_id
+    // and ONLY non-deleted ones (which haven't been spent yet)
+    // AND only those that haven't been applied to a class yet.
+    const filters = {
+        categoria: 'Nota de Crédito',
+        lugar_id: lugarId
+    };
+    
+    const notas = await MovimientoCaja.findAll(filters);
+    // Extra filter for unused ones (those without usado_en_clase_id)
+    const unusedNotas = notas.filter(n => !n.usado_en_clase_id);
+    res.json({ data: unusedNotas.map(n => n.toJSON()) });
+}));
+
+/**
+ * GET /api/caja/:id
+ */
+router.get('/:id', asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const movimiento = await MovimientoCaja.findById(id);
+    if (!movimiento) throw new AppError('Movimiento no encontrado', 404);
+    res.json({ data: movimiento.toJSON() });
+}));
+
+/**
  * POST /api/caja
  */
 router.post('/', asyncHandler(async (req, res) => {

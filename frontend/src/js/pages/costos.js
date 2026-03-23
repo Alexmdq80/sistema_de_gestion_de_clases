@@ -185,6 +185,17 @@ export class CostosPage {
                                 <small class="text-info">Puede modificar este monto en caso de descuentos o bonificaciones.</small>
                             </div>
 
+                            <div id="nota-credito-apply-section" class="mt-4 p-3 border rounded" style="display: none; border-color: #28a745 !important;">
+                               <h4 class="text-success"><i class="fas fa-ticket-alt"></i> Aplicar Saldo a Favor</h4>
+                               <div class="form-group mb-0">
+                                   <label for="select-nota-credito">Nota de Crédito disponible:</label>
+                                   <select id="select-nota-credito" class="form-control">
+                                       <option value="">-- No aplicar saldo --</option>
+                                   </select>
+                                   <div id="nota-credito-detail" class="mt-2 small text-muted"></div>
+                               </div>
+                            </div>
+
                             <div id="charge-options-section" class="mt-4 p-3 bg-light border rounded" style="display: none;">
                                <h4>Opciones de Cobro</h4>
                                <div class="form-check mb-2">
@@ -361,13 +372,15 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             const fecha = this.container.querySelector('#input-fecha-pago').value;
             const monto = parseFloat(montoPagoInput.value);
             const montoRef = parseFloat(montoRefInput.value);
+            const notaCreditoId = this.container.querySelector('#select-nota-credito').value || null;
             
             const chargeOptions = {
                 cobrar_salon: chargeSalonCheckbox.checked,
                 practicantes_ids: Array.from(this.container.querySelectorAll('.practicante-charge-checkbox:checked'))
                     .map(cb => parseInt(cb.value, 10)),
                 monto_pago_espacio: monto,
-                monto_referencia_espacio: montoRef
+                monto_referencia_espacio: montoRef,
+                nota_credito_id: notaCreditoId
             };
 
             await this.submitPayment(id, true, fecha, chargeOptions);
@@ -386,7 +399,8 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         try {
             // Parámetros para pagos: si filtramos por mes de abono, usamos mes/año. Si no, rango de fechas.
             const pagosParams = { 
-                filter_by_mes_abono: this.filterByMesAbono || false
+                filter_by_mes_abono: this.filterByMesAbono || false,
+                lugar_id: this.filters.lugar_id // <--- FIX: Added venue filter
             };
 
             if (this.filterByMesAbono) {
@@ -496,18 +510,19 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         const summaryDiv = this.container.querySelector('#costos-summary');
         
         // Clases (Egresos al club)
-        const totalPaidClases = this.clases.reduce((acc, c) => acc + this.getPaidAmount(c), 0);
+        // We calculate real cash exit: Total Paid minus any Credit Note applied
+        const totalPaidClases = this.clases.reduce((acc, c) => {
+            const paid = this.getPaidAmount(c);
+            const ncAmount = c.nota_credito_monto ? parseFloat(c.nota_credito_monto) : 0;
+            return acc + (paid - ncAmount);
+        }, 0);
+
         const totalExpectedClases = this.clases.reduce((acc, c) => acc + this.getExpectedCost(c), 0);
         
         // Ingresos por Abonos (Cobros reales a practicantes)
-        const totalIngresosAbonos = (this.pagosAbonos || [])
-            .filter(p => p.pago_tipo === 'ingreso' && p.categoria)
-            .reduce((acc, p) => acc + (parseFloat(p.monto) - (p.pago_socio_id ? 8000 : 0)), 0); // Assuming 8000 if linked, but better use real logic
-
-        // Let's use a more precise classification for the summary
         let sumIngresosAbonos = 0;
         let sumIngresosCuotas = 0;
-        let sumEgresosClub = totalPaidClases; // Classes already calculated
+        let sumEgresosClub = totalPaidClases; 
         let sumEgresosCuotas = 0;
 
         (this.pagosAbonos || []).forEach(p => {
@@ -516,9 +531,6 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                 if (p.tipo_abono_nombre === 'Recepción Cuota Social' || !p.categoria) {
                     sumIngresosCuotas += monto;
                 } else {
-                    // It's a class subscription. If it has a linked social fee, we should ideally split it.
-                    // Based on our backend logic, p.monto in "ingreso" includes the social fee.
-                    // For now, let's keep it simple: if it's an abono, it's abono income.
                     sumIngresosAbonos += monto;
                 }
             } else if (p.pago_tipo === 'egreso' && p.tipo_abono_nombre === 'Egreso Cuota Social (Club)') {
@@ -526,16 +538,22 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             }
         });
 
-        // Caja Extra
-        const totalIngresosExtra = this.movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + m.monto, 0);
-        const totalEgresosExtra = this.movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + m.monto, 0);
+        // Caja Extra: EXCLUDE 'Nota de Crédito' category from income totals 
+        // because they represent virtual balance, not new cash coming in.
+        const totalIngresosExtra = this.movimientos
+            .filter(m => m.tipo === 'ingreso' && m.categoria !== 'Nota de Crédito')
+            .reduce((acc, m) => acc + m.monto, 0);
+            
+        const totalEgresosExtra = this.movimientos
+            .filter(m => m.tipo === 'egreso')
+            .reduce((acc, m) => acc + m.monto, 0);
 
         // Balance Final de Utilidad
         const totalIngresos = sumIngresosAbonos + sumIngresosCuotas + totalIngresosExtra;
         const totalEgresos = totalEgresosExtra + sumEgresosClub + sumEgresosCuotas;
         const utilidadNeta = totalIngresos - totalEgresos;
         
-        const ahorroNegociacion = totalExpectedClases - totalPaidClases;
+        const ahorroNegociacion = totalExpectedClases - this.clases.reduce((acc, c) => acc + this.getPaidAmount(c), 0);
 
         // Cálculo de Horas (Solo realizadas o programadas, no canceladas/suspendidas)
         // Usamos clasesForHours para asegurar que contamos las clases que OCURRIERON en el mes (Devengado)
@@ -656,6 +674,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                     <td>$${expected.toFixed(2)}</td>
                                     <td class="${c.pago_espacio_realizado ? 'text-success font-weight-bold' : 'text-muted'}">
                                         $${paid.toFixed(2)}
+                                        ${c.tiene_nota_credito ? ' <span class="badge badge-pill badge-success" title="Se aplicó nota de crédito" style="font-size: 0.65rem; vertical-align: middle; padding: 0.2rem 0.4rem;"><i class="fas fa-ticket-alt"></i> NC</span>' : ''}
                                     </td>
                                     <td class="${diff > 0 ? 'text-info' : (diff < 0 ? 'text-danger' : 'text-muted')}">
                                         ${c.pago_espacio_realizado ? (diff > 0 ? `-$${diff.toFixed(2)}` : (diff < 0 ? `+$${Math.abs(diff).toFixed(2)}` : '-')) : '-'}
@@ -722,7 +741,6 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 <th>Categoría</th>
                                 <th>Descripción</th>
                                 <th>Monto</th>
-                                <th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -730,15 +748,15 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 <tr>
                                     <td>${formatDateDashes(m.fecha)}</td>
                                     <td><span class="badge ${m.tipo === 'ingreso' ? 'badge-success' : 'badge-danger'}">${m.tipo.toUpperCase()}</span></td>
-                                    <td>${m.categoria}</td>
+                                    <td>
+                                        ${m.categoria} 
+                                        ${m.usado_en_clase_id ? '<span class="badge badge-light border text-muted" title="Esta nota ya fue aplicada al pago de una clase" style="font-size: 0.65rem;">USADA</span>' : ''}
+                                    </td>
                                     <td><small>${m.descripcion || '-'}</small></td>
                                     <td class="${m.tipo === 'ingreso' ? 'text-success' : 'text-danger'}"><strong>$${m.monto.toFixed(2)}</strong></td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-danger delete-mov-btn" data-id="${m.id}">Eliminar</button>
-                                    </td>
                                 </tr>
                             `).join('')}
-                            ${this.movimientos.length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No hay movimientos extra en este periodo.</td></tr>' : ''}
+                            ${this.movimientos.length === 0 ? '<tr><td colspan="5" class="text-center text-muted">No hay movimientos extra en este periodo.</td></tr>' : ''}
                         </tbody>
                     </table>
                 </div>
@@ -751,17 +769,6 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         content.querySelectorAll('.unmark-paid-btn').forEach(btn => btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), false));
         
         // Eventos Caja
-        content.querySelectorAll('.delete-mov-btn').forEach(btn => {
-            btn.onclick = async () => {
-                if (confirm('¿Desea eliminar este movimiento de caja?')) {
-                    try {
-                        await apiClient.delete(`/caja/${btn.dataset.id}`);
-                        showSuccess('Movimiento eliminado');
-                        await this.loadData();
-                    } catch (error) { displayApiError(error); }
-                }
-            };
-        });
     }
 
     async handleMarkPaid(id, isPaid, isEdit = false) {
@@ -773,6 +780,8 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             const practicantesList = this.container.querySelector('#reserved-practicantes-list');
             const chargeCheckbox = this.container.querySelector('#charge-salon-cost');
             const practicantesSection = this.container.querySelector('#practicantes-to-charge-section');
+            const montoPagoInput = this.container.querySelector('#input-monto-pago');
+            const montoRefInput = this.container.querySelector('#input-monto-referencia');
 
             modalTitle.textContent = isEdit ? 'Editar Registro de Pago' : 'Registrar Fecha de Pago';
             this.container.querySelector('#pago-clase-id').value = id;
@@ -780,14 +789,67 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             // Si es edición, usamos los valores ya guardados. Si no, calculamos sugeridos.
             if (isEdit) {
                 this.container.querySelector('#input-fecha-pago').value = clase.fecha_pago_espacio;
-                this.container.querySelector('#input-monto-referencia').value = parseFloat(clase.monto_referencia_espacio || 0).toFixed(2);
-                this.container.querySelector('#input-monto-pago').value = parseFloat(clase.monto_pago_espacio || 0).toFixed(2);
+                montoRefInput.value = parseFloat(clase.monto_referencia_espacio || 0).toFixed(2);
+                montoPagoInput.value = parseFloat(clase.monto_pago_espacio || 0).toFixed(2);
             } else {
                 const standardCost = this.getExpectedCost(clase);
                 this.container.querySelector('#input-fecha-pago').value = new Date().toISOString().split('T')[0];
-                this.container.querySelector('#input-monto-referencia').value = standardCost.toFixed(2);
-                this.container.querySelector('#input-monto-pago').value = standardCost.toFixed(2);
+                montoRefInput.value = standardCost.toFixed(2);
+                montoPagoInput.value = standardCost.toFixed(2);
             }
+
+            // Load available credit notes for this Venue
+            const ncSection = this.container.querySelector('#nota-credito-apply-section');
+            const ncSelect = this.container.querySelector('#select-nota-credito');
+            const ncDetail = this.container.querySelector('#nota-credito-detail');
+            ncSelect.innerHTML = '<option value="">-- No aplicar saldo --</option>';
+            ncSection.style.display = 'none';
+
+            try {
+                const resNC = await apiClient.get(`/caja/notas-credito/${clase.lugar_id}`);
+                const notas = resNC.data || [];
+                
+                // Si estamos editando y la clase ya tiene una nota, debemos asegurarnos de que aparezca en el listado
+                // aunque técnicamente esté "usada" (el backend de notas-credito filtra las no usadas).
+                if (isEdit && clase.nota_credito_id) {
+                    try {
+                        const resCurrentNC = await apiClient.get(`/caja/${clase.nota_credito_id}`);
+                        const currentNC = resCurrentNC.data;
+                        if (currentNC && !notas.find(n => n.id === currentNC.id)) {
+                            notas.unshift(currentNC);
+                        }
+                    } catch (e) { console.error('Error loading current NC', e); }
+                }
+
+                if (notas.length > 0) {
+                    ncSection.style.display = 'block';
+                    notas.forEach(n => {
+                        const opt = document.createElement('option');
+                        opt.value = n.id;
+                        opt.dataset.monto = n.monto;
+                        opt.textContent = `${formatDateDashes(n.fecha)} - $${n.monto.toFixed(2)}${isEdit && n.id === clase.nota_credito_id ? ' (APLICADA ACTUALMENTE)' : ''}`;
+                        if (isEdit && n.id === clase.nota_credito_id) opt.selected = true;
+                        ncSelect.appendChild(opt);
+                    });
+                    
+                    // Disparar el onchange inicial para mostrar el detalle si ya hay una nota seleccionada
+                    if (isEdit && clase.nota_credito_id) {
+                        setTimeout(() => ncSelect.onchange(), 0);
+                    }
+                }
+            } catch (e) { console.error('Error loading credit notes', e); }
+
+            // Handle NC selection
+            ncSelect.onchange = () => {
+                const selectedOpt = ncSelect.selectedOptions[0];
+                const montoNC = selectedOpt.value ? parseFloat(selectedOpt.dataset.monto) : 0;
+                
+                if (selectedOpt.value) {
+                    ncDetail.innerHTML = `<span class="text-success">Se aplicará un saldo a favor de <strong>$${montoNC.toFixed(2)}</strong> para cubrir este pago.</span>`;
+                } else {
+                    ncDetail.innerHTML = '';
+                }
+            };
 
             // Reset charge options
             chargeCheckbox.checked = false;
@@ -841,7 +903,8 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                 monto_pago_espacio: chargeOptions.monto_pago_espacio,
                 monto_referencia_espacio: chargeOptions.monto_referencia_espacio,
                 cobrar_salon: chargeOptions.cobrar_salon,
-                practicantes_ids: chargeOptions.practicantes_ids
+                practicantes_ids: chargeOptions.practicantes_ids,
+                nota_credito_id: chargeOptions.nota_credito_id
             });
             showSuccess(isPaid ? 'Clase marcada como pagada' : 'Pago anulado');
             await this.loadData();

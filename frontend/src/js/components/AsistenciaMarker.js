@@ -108,6 +108,22 @@ export class AsistenciaMarker {
                                 <div id="motivo-cancelacion-group" class="form-group" style="display: ${c.estado === 'cancelada' || c.estado === 'suspendida' ? 'block' : 'none'};">
                                     <label for="motivo-cancelacion"><strong>Motivo:</strong></label>
                                     <input type="text" id="motivo-cancelacion" class="form-control" value="${c.motivo_cancelacion || ''}" placeholder="Especifique el motivo" ${c.estado === 'cerrada' ? 'disabled' : ''}>
+                                    
+                                    ${c.pago_espacio_realizado ? `
+                                        <div id="nota-credito-group" class="mt-3 p-2 border rounded bg-white" style="border-color: #ffc107 !important;">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="generar-nota-credito">
+                                                <label class="form-check-label font-weight-bold" for="generar-nota-credito">
+                                                    ¿Generar Nota de Crédito en Caja?
+                                                </label>
+                                            </div>
+                                            <div id="monto-nota-credito-container" class="mt-2" style="display: none;">
+                                                <label for="monto-nota-credito"><small>Monto a acreditar ($):</small></label>
+                                                <input type="number" step="0.01" id="monto-nota-credito" class="form-control form-control-sm" value="${c.monto_pago_espacio || 0}">
+                                                <small class="text-muted">Se creará un ingreso en caja para compensar el pago realizado.</small>
+                                            </div>
+                                        </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="form-group">
@@ -199,6 +215,12 @@ export class AsistenciaMarker {
             // Toggle motivo group
             if (currentEstado === 'cancelada' || currentEstado === 'suspendida') {
                 motivoGroup.style.display = 'block';
+                // Si la clase ya estaba pagada, marcar por defecto generar nota de crédito si cambia a cancelada
+                const ncCheckbox = this.container.querySelector('#generar-nota-credito');
+                if (ncCheckbox && currentEstado === 'cancelada') {
+                    ncCheckbox.checked = true;
+                    this.container.querySelector('#monto-nota-credito-container').style.display = 'block';
+                }
             } else {
                 motivoGroup.style.display = 'none';
             }
@@ -215,6 +237,14 @@ export class AsistenciaMarker {
             alertBox.style.display = canModify ? 'none' : 'block';
         });
 
+        // Event listener for credit note checkbox
+        const ncCheckbox = this.container.querySelector('#generar-nota-credito');
+        if (ncCheckbox) {
+            ncCheckbox.addEventListener('change', () => {
+                this.container.querySelector('#monto-nota-credito-container').style.display = ncCheckbox.checked ? 'block' : 'none';
+            });
+        }
+
         this.container.querySelector('#save-attendance-btn').addEventListener('click', async () => {
             const updates = [];
             this.container.querySelectorAll('.attendance-checkbox').forEach(cb => {
@@ -228,6 +258,12 @@ export class AsistenciaMarker {
             const profesor_id = this.container.querySelector('#clase-profesor').value;
             const observaciones = this.container.querySelector('#clase-observaciones').value;
             const motivo_cancelacion = this.container.querySelector('#motivo-cancelacion') ? this.container.querySelector('#motivo-cancelacion').value : '';
+            
+            // Recoger datos de nota de crédito
+            const ncCheckboxValue = this.container.querySelector('#generar-nota-credito');
+            const generar_nota_credito = ncCheckboxValue ? ncCheckboxValue.checked : false;
+            const monto_nota_credito_el = this.container.querySelector('#monto-nota-credito');
+            const monto_nota_credito = monto_nota_credito_el ? parseFloat(monto_nota_credito_el.value) : 0;
 
             try {
                 // 1. Save class data
@@ -236,6 +272,8 @@ export class AsistenciaMarker {
                     profesor_id: profesor_id ? parseInt(profesor_id, 10) : null,
                     observaciones,
                     motivo_cancelacion,
+                    generar_nota_credito,
+                    monto_nota_credito,
                     tipo: this.options.clase.tipo,
                     fecha: this.options.clase.fecha,
                     hora: this.options.clase.hora,
