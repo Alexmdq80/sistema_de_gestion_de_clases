@@ -12,6 +12,7 @@ export class InformesPage {
         this.selectedYear = today.getFullYear();
         this.selectedLugarId = '';
         this.reportBasis = 'pago'; // 'pago' | 'mes'
+        this.hideBirthYear = false;
         
         this.lugares = [];
         this.data = [];
@@ -48,6 +49,12 @@ export class InformesPage {
                             <option value="">Todas las Sedes</option>
                             <!-- Populated dynamically -->
                         </select>
+                    </div>
+                    <div class="form-group col-md-2 mb-md-0" id="birthday-options-container" style="display: ${this.currentReport === 'birthday' ? 'block' : 'none'}">
+                        <div class="custom-control custom-checkbox pt-2">
+                            <input type="checkbox" class="custom-control-input" id="hide-birth-year" ${this.hideBirthYear ? 'checked' : ''}>
+                            <label class="custom-control-label" for="hide-birth-year">Ocultar Año</label>
+                        </div>
                     </div>
                     <div class="form-group col-md-2 mb-md-0" id="basis-container" style="display: ${['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none'}">
                         <select class="form-control" id="report-basis" title="Criterio de fecha">
@@ -111,6 +118,11 @@ export class InformesPage {
             if (basisContainer) {
                 basisContainer.style.display = ['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none';
             }
+
+            const bdayOptions = this.container.querySelector('#birthday-options-container');
+            if (bdayOptions) {
+                bdayOptions.style.display = this.currentReport === 'birthday' ? 'block' : 'none';
+            }
             this.loadReport();
         };
         this.container.querySelector('#report-month').onchange = (e) => {
@@ -125,6 +137,14 @@ export class InformesPage {
             this.selectedLugarId = e.target.value;
             this.loadReport();
         };
+
+        const hideYearCheck = this.container.querySelector('#hide-birth-year');
+        if (hideYearCheck) {
+            hideYearCheck.onchange = (e) => {
+                this.hideBirthYear = e.target.checked;
+                this.loadReport();
+            };
+        }
         
         const basisSelect = this.container.querySelector('#report-basis');
         if (basisSelect) {
@@ -697,21 +717,26 @@ export class InformesPage {
                         <tr>
                             <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-birthday" checked title="Seleccionar todos"></th>
                             <th>Nombre y Apellido</th>
-                            ${!isSedeFiltered ? '<th>Sede</th>' : ''}
                             <th>Fecha de Nacimiento</th>
-                            <th class="text-right">Edad</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${this.data.map((item, index) => `
-                            <tr data-index="${index}">
-                                <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
-                                <td>${item.nombre_completo}</td>
-                                ${!isSedeFiltered ? `<td>${item.sede_nombre || '-'}</td>` : ''}
-                                <td>${formatDateDashes(item.fecha_nacimiento)}</td>
-                                <td class="text-right">${item.edad} años</td>
-                            </tr>
-                        `).join('')}
+                        ${this.data.map((item, index) => {
+                            let fechaNac = formatDateDashes(item.fecha_nacimiento);
+                            if (this.hideBirthYear && fechaNac) {
+                                const parts = fechaNac.split('-');
+                                if (parts.length === 3) {
+                                    fechaNac = `${parts[0]}-${parts[1]}`;
+                                }
+                            }
+                            return `
+                                <tr data-index="${index}">
+                                    <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
+                                    <td>${item.nombre_completo}</td>
+                                    <td>${fechaNac}</td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
                 <div class="mt-4 flex justify-between small text-muted">
