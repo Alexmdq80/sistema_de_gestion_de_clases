@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3000/api'; // Or your backend API base URL
+const API_BASE_URL = '/api'; // Use relative path for Vite proxy
 
 export const makeRequest = async (endpoint, method = 'GET', data = null, authenticate = false) => {
     const headers = {

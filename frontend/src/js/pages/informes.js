@@ -53,7 +53,7 @@ export class InformesPage {
                     <div class="form-group col-md-2 mb-md-0" id="birthday-options-container" style="display: ${this.currentReport === 'birthday' ? 'block' : 'none'}">
                         <div class="custom-control custom-checkbox pt-2">
                             <input type="checkbox" class="custom-control-input" id="hide-birth-year" ${this.hideBirthYear ? 'checked' : ''}>
-                            <label class="custom-control-label" for="hide-birth-year">Ocultar Año</label>
+                            <label class="custom-control-label" for="hide-birth-year">Vista simple</label>
                         </div>
                     </div>
                     <div class="form-group col-md-2 mb-md-0" id="basis-container" style="display: ${['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none'}">
@@ -718,22 +718,39 @@ export class InformesPage {
                             <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-birthday" checked title="Seleccionar todos"></th>
                             <th>Nombre y Apellido</th>
                             <th>Fecha de Nacimiento</th>
+                            ${!this.hideBirthYear ? '<th>Edad Actual</th>' : ''}
                         </tr>
                     </thead>
                     <tbody>
                         ${this.data.map((item, index) => {
                             let fechaNac = formatDateDashes(item.fecha_nacimiento);
-                            if (this.hideBirthYear && fechaNac) {
-                                const parts = fechaNac.split('-');
-                                if (parts.length === 3) {
-                                    fechaNac = `${parts[0]}-${parts[1]}`;
+                            let nombre = item.nombre_completo;
+
+                            if (this.hideBirthYear) {
+                                // Ocultar año
+                                if (fechaNac) {
+                                    const parts = fechaNac.split('-');
+                                    if (parts.length === 3) {
+                                        fechaNac = `${parts[0]}-${parts[1]}`;
+                                    }
+                                }
+
+                                // Formatear nombre: Juan Carlos Pérez -> Juan C. P.
+                                const nameParts = nombre.trim().split(/\s+/);
+                                if (nameParts.length >= 2) {
+                                    const firstName = nameParts[0];
+                                    const lastName = nameParts[nameParts.length - 1];
+                                    const middleInitial = nameParts.length > 2 ? `${nameParts[1].charAt(0).toUpperCase()}. ` : '';
+                                    nombre = `${firstName} ${middleInitial}${lastName.charAt(0).toUpperCase()}.`;
                                 }
                             }
+
                             return `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
-                                    <td>${item.nombre_completo}</td>
+                                    <td>${nombre}</td>
                                     <td>${fechaNac}</td>
+                                    ${!this.hideBirthYear ? `<td>${item.edad} años</td>` : ''}
                                 </tr>
                             `;
                         }).join('')}
