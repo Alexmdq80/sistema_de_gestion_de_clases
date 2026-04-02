@@ -100,12 +100,13 @@ export class AsistenciaMarker {
                                         <option value="cerrada" ${c.estado === 'cerrada' ? 'selected' : ''} disabled>Cerrada</option>
                                         <option value="cancelada" ${c.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option>
                                         <option value="suspendida" ${c.estado === 'suspendida' ? 'selected' : ''}>Suspendida</option>
+                                        <option value="sin_actividad" ${c.estado === 'sin_actividad' ? 'selected' : ''}>Sin Actividad</option>
                                     </select>
                                     ${!isTimePassed ? '<br><small class="text-muted">La opción "Realizada" se habilitará cuando pase la fecha/hora de la clase.</small>' : ''}
                                     ${c.estado === 'cerrada' ? '<br><small class="text-muted">No se puede cambiar el estado de una clase cerrada.</small>' : ''}
                                 </div>
 
-                                <div id="motivo-cancelacion-group" class="form-group" style="display: ${c.estado === 'cancelada' || c.estado === 'suspendida' ? 'block' : 'none'};">
+                                <div id="motivo-cancelacion-group" class="form-group" style="display: ${c.estado === 'cancelada' || c.estado === 'suspendida' || c.estado === 'sin_actividad' ? 'block' : 'none'};">
                                     <label for="motivo-cancelacion"><strong>Motivo:</strong></label>
                                     <input type="text" id="motivo-cancelacion" class="form-control" value="${c.motivo_cancelacion || ''}" placeholder="Especifique el motivo" ${c.estado === 'cerrada' ? 'disabled' : ''}>
                                     
@@ -213,7 +214,7 @@ export class AsistenciaMarker {
             }
 
             // Toggle motivo group
-            if (currentEstado === 'cancelada' || currentEstado === 'suspendida') {
+            if (currentEstado === 'cancelada' || currentEstado === 'suspendida' || currentEstado === 'sin_actividad') {
                 motivoGroup.style.display = 'block';
                 // Si la clase ya estaba pagada, marcar por defecto generar nota de crédito si cambia a cancelada
                 const ncCheckbox = this.container.querySelector('#generar-nota-credito');

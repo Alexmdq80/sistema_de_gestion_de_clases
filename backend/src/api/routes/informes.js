@@ -215,7 +215,7 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id
         WHERE c.deleted_at IS NULL 
-        AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0 OR c.estado IN ('cancelada', 'suspendida'))
+        AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0 OR c.estado IN ('cancelada', 'suspendida', 'sin_actividad'))
         AND (l.id = ? OR l.parent_id = ?)
         AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ? AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?
     `;
@@ -301,7 +301,7 @@ router.get('/balance-mensual', asyncHandler(async (req, res) => {
         SELECT SUM(TIME_TO_SEC(TIMEDIFF(hora_fin, hora))) / 3600 as horas
         FROM Clase
         WHERE deleted_at IS NULL 
-        AND estado NOT IN ('cancelada', 'suspendida')
+        AND estado NOT IN ('cancelada', 'suspendida', 'sin_actividad')
         AND fecha >= ? AND fecha <= ?
     `;
     const paramsHoras = [firstDay, lastDay];

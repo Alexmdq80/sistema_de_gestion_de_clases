@@ -29,7 +29,8 @@ export class ClaseList {
       'realizada': 'badge-success',
       'cancelada': 'badge-danger',
       'suspendida': 'badge-warning',
-      'cerrada': 'badge-dark'
+      'cerrada': 'badge-dark',
+      'sin_actividad': 'badge-secondary'
     };
 
     this.container.innerHTML = `
@@ -51,7 +52,7 @@ export class ClaseList {
           <tbody>
             ${this.clases.length === 0 ? '<tr><td colspan="9" class="text-center">No hay clases registradas en este periodo</td></tr>' : ''}
             ${this.clases.map(c => `
-              <tr class="${c.estado === 'cancelada' || c.estado === 'suspendida' || c.estado === 'cerrada' ? 'table-light text-muted' : ''}">
+              <tr class="${c.estado === 'cancelada' || c.estado === 'suspendida' || c.estado === 'cerrada' || c.estado === 'sin_actividad' ? 'table-light text-muted' : ''}">
                 <td><strong>${formatDateWithDay(c.fecha)}</strong></td>
                 <td>${c.hora.substring(0, 5)} - ${c.hora_fin.substring(0, 5)}</td>
                 <td><small>${c.profesor_nombre || '<span class="text-muted">No asignado</span>'}</small></td>
@@ -64,7 +65,7 @@ export class ClaseList {
                 <td>${c.lugar_nombre || '-'}</td>
                 <td>
                   <span class="badge ${statusBadges[c.estado] || 'badge-secondary'}">
-                    ${c.estado.charAt(0).toUpperCase() + c.estado.slice(1)}
+                    ${(c.estado === 'sin_actividad' ? 'Sin Actividad' : c.estado.charAt(0).toUpperCase() + c.estado.slice(1))}
                   </span>
                   ${c.pago_espacio_realizado ? `
                     <span class="badge badge-success ml-1" title="Costo de espacio pagado">
@@ -73,7 +74,7 @@ export class ClaseList {
                   ` : ''}
                 </td>
                 <td>
-                  ${c.estado === 'cancelada' || c.estado === 'suspendida' ? '-' : `
+                  ${c.estado === 'cancelada' || c.estado === 'suspendida' || c.estado === 'sin_actividad' ? '-' : `
                     <span class="badge ${c.asistentes_count > 0 ? 'badge-primary' : 'badge-light'}">
                       ${c.asistentes_count} presentes
                     </span>

@@ -138,7 +138,7 @@ export class Clase {
             JOIN Actividad a ON c.actividad_id = a.id
             WHERE c.fecha = ? 
             AND c.deleted_at IS NULL
-            AND c.estado != 'cancelada'
+            AND c.estado NOT IN ('cancelada', 'sin_actividad')
             AND (
                 c.lugar_id = ? 
                 ${parentId ? 'OR c.lugar_id = ?' : ''} 
@@ -224,7 +224,8 @@ export class Clase {
                                    (data.hora && data.hora != current.hora) ||
                                    (data.hora_fin && data.hora_fin != current.hora_fin);
         
-        const isReactivating = data.estado && data.estado != 'cancelada' && current.estado == 'cancelada';
+        const inactiveStatuses = ['cancelada', 'sin_actividad'];
+        const isReactivating = data.estado && !inactiveStatuses.includes(data.estado) && inactiveStatuses.includes(current.estado);
 
         if (isChangingSchedule || isReactivating) {
             const overlap = await this.checkOverlap(newLugarId, newFecha, newHora, newHoraFin, id);

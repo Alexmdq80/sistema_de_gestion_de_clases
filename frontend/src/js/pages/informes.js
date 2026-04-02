@@ -589,17 +589,17 @@ export class InformesPage {
                                 const dateObj = new Date(year, month - 1, day);
                                 const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' });
                                 const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
-                                
-                                const isCancelled = ['cancelada', 'suspendida'].includes(a.estado);
+
+                                const isCancelled = ['cancelada', 'suspendida', 'sin_actividad'].includes(a.estado);
                                 const montoNum = parseFloat(a.monto || 0);
-                                
+
                                 let actividadDetalle = a.actividad_nombre;
                                 if (isCancelled) {
-                                    // Para clases canceladas, el usuario prefiere ver el motivo en lugar de las observaciones
-                                    const detalle = a.estado === 'cancelada' ? (a.motivo_cancelacion || '') : (a.motivo_cancelacion || a.observaciones || '');
-                                    actividadDetalle += ` <br><small class="text-danger">(${a.estado.toUpperCase()}${detalle ? ': ' + detalle : ''})</small>`;
+                                    // Para clases canceladas/sin actividad, el usuario prefiere ver el motivo en lugar de las observaciones
+                                    const label = a.estado === 'sin_actividad' ? 'SIN ACTIVIDAD' : a.estado.toUpperCase();
+                                    const detalle = (a.estado === 'cancelada' || a.estado === 'sin_actividad') ? (a.motivo_cancelacion || '') : (a.motivo_cancelacion || a.observaciones || '');
+                                    actividadDetalle += ` <br><small class="text-danger">(${label}${detalle ? ': ' + detalle : ''})</small>`;
                                 }
-
                                 return `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-alquiler" checked></td>

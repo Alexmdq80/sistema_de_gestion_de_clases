@@ -90,7 +90,7 @@ export class CostosPage {
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="filter-by-mes-abono-caja" ${this.filterByMesAbono ? 'checked' : ''}>
                             <label class="form-check-label small text-muted" for="filter-by-mes-abono-caja">
-                                <i class="fas fa-info-circle"></i> Usar <strong>Mes de Abono</strong> para filtrar ingresos (en lugar de fecha de cobro real)
+                                <i class="fas fa-info-circle"></i> Usar <strong>Mes Devengado</strong> (Abono) para filtrar ingresos y egresos (en lugar de fecha de movimiento real)
                             </label>
                         </div>
                     </div>
@@ -415,10 +415,10 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
 
             // Para las clases en el flujo de caja, queremos:
             // 1. Clases que ocurrieron en el rango (para ver lo "esperado")
-            // 2. Clases que se PAGARON en el rango (aunque hayan ocurrido antes)
+            // 2. Clases que se PAGARON en el rango (si no estamos en modo devengado)
             const clasesFilters = { 
                 ...this.filters,
-                include_paid_in_range: true // ALWAYS TRUE for rentals to respect the payment month
+                include_paid_in_range: !this.filterByMesAbono // Respect accrual vs cash flow
             };
 
             const clasesForHoursFilters = {
@@ -455,6 +455,8 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
 
     // Obtiene lo que el club espera recibir (Costo Estándar/Referencia)
     getExpectedCost(clase) {
+        if (clase.estado === 'sin_actividad') return 0;
+        
         if (clase.monto_referencia_espacio !== null) {
             return parseFloat(clase.monto_referencia_espacio);
         }
@@ -516,8 +518,6 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
             const ncAmount = c.nota_credito_monto ? parseFloat(c.nota_credito_monto) : 0;
             return acc + (paid - ncAmount);
         }, 0);
-
-        const totalExpectedClases = this.clases.reduce((acc, c) => acc + this.getExpectedCost(c), 0);
         
         // Ingresos por Abonos (Cobros reales a practicantes)
         let sumIngresosAbonos = 0;
@@ -553,12 +553,14 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         const totalEgresos = totalEgresosExtra + sumEgresosClub + sumEgresosCuotas;
         const utilidadNeta = totalIngresos - totalEgresos;
         
-        const ahorroNegociacion = totalExpectedClases - this.clases.reduce((acc, c) => acc + this.getPaidAmount(c), 0);
+        const ahorroNegociacion = this.clases
+            .filter(c => c.pago_espacio_realizado)
+            .reduce((acc, c) => acc + (this.getExpectedCost(c) - this.getPaidAmount(c)), 0);
 
-        // Cálculo de Horas (Solo realizadas o programadas, no canceladas/suspendidas)
+        // Cálculo de Horas (Solo realizadas o programadas, no canceladas/suspendidas/sin_actividad)
         // Usamos clasesForHours para asegurar que contamos las clases que OCURRIERON en el mes (Devengado)
         const totalHoras = (this.clasesForHours || [])
-            .filter(c => !['cancelada', 'suspendida'].includes(c.estado))
+            .filter(c => !['cancelada', 'suspendida', 'sin_actividad'].includes(c.estado))
             .reduce((acc, c) => {
                 const start = new Date(`2000-01-01T${c.hora}`);
                 const end = new Date(`2000-01-01T${c.hora_fin}`);
@@ -652,12 +654,13 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
 
                                 const isCancelled = c.estado === 'cancelada';
                                 const isSuspended = c.estado === 'suspendida';
-                                
+                                const isNoActivity = c.estado === 'sin_actividad';
+
                                 let estadoBadge = '';
-                                if (expected === 0 && (isCancelled || isSuspended)) {
-                                    estadoBadge = `<span class="badge badge-secondary">${c.estado.toUpperCase()}</span>`;
-                                } else if (c.pago_espacio_realizado) {
-                                    estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDateDashes(c.fecha_pago_espacio)}">PAGADA</span>`;
+                                if (expected === 0 && (isCancelled || isSuspended || isNoActivity)) {
+                                    const label = isNoActivity ? 'SIN ACTIVIDAD' : c.estado.toUpperCase();
+                                    estadoBadge = `<span class="badge badge-secondary">${label}</span>`;
+                                } else if (c.pago_espacio_realizado) {                                    estadoBadge = `<span class="badge badge-success" title="Pagado el ${formatDateDashes(c.fecha_pago_espacio)}">PAGADA</span>`;
                                 } else {
                                     estadoBadge = '<span class="badge badge-warning">PENDIENTE</span>';
                                 }

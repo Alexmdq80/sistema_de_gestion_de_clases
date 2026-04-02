@@ -173,9 +173,9 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         }
     }
 
-    // NEW: If the class was already paid and is being cancelled or suspended, create a credit note (Nota de Crédito)
+    // NEW: If the class was already paid and is being cancelled or suspended or no activity, create a credit note (Nota de Crédito)
     // This provides a balance in favor with the Venue.
-    const isBeingCancelledOrSuspended = ['cancelada', 'suspendida'].includes(data.estado) && !['cancelada', 'suspendida'].includes(clase.estado);
+    const isBeingCancelledOrSuspended = ['cancelada', 'suspendida', 'sin_actividad'].includes(data.estado) && !['cancelada', 'suspendida', 'sin_actividad'].includes(clase.estado);
     const wasAlreadyPaid = clase.pago_espacio_realizado === true || data.pago_espacio_realizado === true;
 
     // We only generate the credit note if the user explicitly checked the box in the UI
@@ -183,7 +183,7 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         const montoCredito = data.monto_nota_credito !== undefined ? parseFloat(data.monto_nota_credito) : (clase.monto_pago_espacio || 0);
         
         if (montoCredito > 0) {
-            const labelEstado = data.estado === 'cancelada' ? 'Cancelada' : 'Suspendida';
+            const labelEstado = data.estado === 'sin_actividad' ? 'Sin Actividad' : (data.estado === 'cancelada' ? 'Cancelada' : 'Suspendida');
             let descripcion = `Nota de Crédito por Clase ${labelEstado} del ${clase.fecha} (${clase.hora})`;
             if (data.observaciones || clase.observaciones) {
                 const obs = data.observaciones !== undefined ? data.observaciones : clase.observaciones;
@@ -204,13 +204,13 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
     }
 
     // NEW: If the class is being un-cancelled or un-suspended, remove associated credit note
-    const isReactivating = !['cancelada', 'suspendida'].includes(data.estado) && ['cancelada', 'suspendida'].includes(clase.estado);
+    const isReactivating = !['cancelada', 'suspendida', 'sin_actividad'].includes(data.estado) && ['cancelada', 'suspendida', 'sin_actividad'].includes(clase.estado);
     if (isReactivating) {
         // Try by class_id first (new robust way)
         await MovimientoCaja.deleteByClaseId(clase.id);
         
         // Also try by description pattern (legacy for notes created before the schema update)
-        const labelAntiguo = clase.estado === 'cancelada' ? 'Cancelada' : 'Suspendida';
+        const labelAntiguo = clase.estado === 'sin_actividad' ? 'Sin Actividad' : (clase.estado === 'cancelada' ? 'Cancelada' : 'Suspendida');
         const pattern = `Nota de Crédito por Clase ${labelAntiguo} del ${clase.fecha} (${clase.hora})%`;
         await MovimientoCaja.deleteByDescription(pattern);
     }

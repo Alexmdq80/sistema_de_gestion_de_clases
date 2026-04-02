@@ -244,6 +244,18 @@ export class Pago {
             }
         }
 
+        if (!filters.mes && !filters.anio) {
+            if (filters.fecha_inicio) {
+                sql += ' AND fecha >= ?';
+                params.push(filters.fecha_inicio);
+            }
+
+            if (filters.fecha_fin) {
+                sql += ' AND fecha <= ?';
+                params.push(filters.fecha_fin);
+            }
+        }
+
         if (filters.tipo_abono_id) {
             sql += ' AND tipo_abono_id = ?';
             params.push(filters.tipo_abono_id);
@@ -252,16 +264,6 @@ export class Pago {
         if (filters.lugar_id) {
             sql += ' AND (lugar_id = ? OR EXISTS (SELECT 1 FROM Lugar WHERE id = global_pagos.lugar_id AND parent_id = ?))';
             params.push(filters.lugar_id, filters.lugar_id);
-        }
-
-        if (filters.fecha_inicio) {
-            sql += ' AND fecha >= ?';
-            params.push(filters.fecha_inicio);
-        }
-
-        if (filters.fecha_fin) {
-            sql += ' AND fecha <= ?';
-            params.push(filters.fecha_fin);
         }
 
         if (filters.exclude_cuota_social) {
