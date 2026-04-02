@@ -28,6 +28,59 @@ export class Asistencia {
     }
 
     /**
+     * Obtiene el historial de asistencias de un practicante específico.
+     * Útil para presupuestos y balances.
+     */
+    static async findByPracticante(practicanteId, filters = {}) {
+        let sql = `
+            SELECT 
+                c.id as clase_id,
+                a.id as asistencia_id,
+                IF(a.id IS NOT NULL, 1, 0) as ya_anotado,
+                c.fecha, 
+                c.hora, 
+                c.hora_fin,
+                c.tipo as clase_tipo,
+                c.estado as clase_estado,
+                c.observaciones as clase_observaciones,
+                c.pago_espacio_realizado,
+                c.monto_referencia_espacio,
+                c.monto_pago_espacio,
+                act.nombre as actividad_nombre,
+                l.nombre as lugar_nombre
+            FROM Clase c
+            LEFT JOIN Asistencia a ON c.id = a.clase_id AND a.practicante_id = ?
+            JOIN Actividad act ON c.actividad_id = act.id
+            JOIN Lugar l ON c.lugar_id = l.id
+            WHERE c.deleted_at IS NULL
+            AND (
+                a.id IS NOT NULL -- Clases donde ya está anotado (incluye canceladas)
+                OR (c.tipo = 'flexible' AND c.estado = 'programada') -- O clases particulares disponibles
+            )
+        `;
+
+        const params = [practicanteId];
+
+        if (filters.fecha_inicio) {
+            sql += ' AND c.fecha >= ?';
+            params.push(filters.fecha_inicio);
+        }
+        if (filters.fecha_fin) {
+            sql += ' AND c.fecha <= ?';
+            params.push(filters.fecha_fin);
+        }
+        if (filters.tipo) {
+            sql += ' AND c.tipo = ?';
+            params.push(filters.tipo);
+        }
+
+        sql += ' ORDER BY c.fecha DESC, c.hora DESC';
+
+        const [rows] = await pool.execute(sql, params);
+        return rows;
+    }
+
+    /**
      * Registra o actualiza la asistencia de un practicante.
      */
     static async upsert(data) {

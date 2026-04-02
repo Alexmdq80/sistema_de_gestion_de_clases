@@ -12,6 +12,7 @@ import LugaresPage from './pages/lugares.js';
 import ActividadesPage from './pages/actividades.js';
 import PagosPage from './pages/pagos.js';
 import TiposAbonoPage from './pages/tiposAbono.js';
+import PresupuestosPage from './pages/presupuestos.js';
 import InformesPage from './pages/informes.js';
 import EstimadorPage from './pages/estimador.js';
 import AsistenciaPage from './pages/asistencia.js';
@@ -64,6 +65,7 @@ function updateNavigation() {
       { href: '/lugares', text: 'Sedes' },
       { href: '/actividades', text: 'Actividades' },
       { href: '/tipos-abono', text: 'Abonos' },
+      { href: '/presupuestos', text: 'Presupuestos' },
       { href: '/profesores', text: 'Profesores' }
     ];
 
@@ -171,6 +173,7 @@ route('/actividades', () => renderPage(ActividadesPage));
 route('/pagos', () => renderPage(PagosPage));
 route('/informes', () => renderPage(InformesPage));
 route('/estimador', () => renderPage(EstimadorPage));
+route('/presupuestos', () => renderPage(PresupuestosPage));
 route('/tipos-abono', () => renderPage(TiposAbonoPage));
 route('/asistencia', () => renderPage(AsistenciaPage));
 route('/horarios', () => renderPage(HorariosPage));

@@ -14,9 +14,23 @@ const router = express.Router();
 router.use(authenticateToken);
 
 /**
+ * GET /api/asistencia/practicante/:id
+ * Obtiene el historial de asistencias de un practicante.
+ */
+router.get('/practicante/:id', asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const filters = {
+        fecha_inicio: req.query.fecha_inicio,
+        fecha_fin: req.query.fecha_fin,
+        tipo: req.query.tipo
+    };
+    const data = await Asistencia.findByPracticante(id, filters);
+    res.json({ data });
+}));
+
+/**
  * GET /api/asistencia/clases/:id/practicantes
- * Obtiene los practicantes elegibles para asistir a esta sesión de clase
- * (aquellos con abono activo en el lugar y fecha de la clase).
+...
  */
 router.get('/clases/:id/practicantes', asyncHandler(async (req, res) => {
     const id = parseInt(req.params.id, 10);

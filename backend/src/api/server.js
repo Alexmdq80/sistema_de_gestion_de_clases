@@ -45,6 +45,7 @@ import deudasRoutes from './routes/deudas.js'; // Import deudas routes
 import cajaRoutes from './routes/caja.js'; // Import caja routes
 import categoriasCajaRoutes from './routes/categoriasCaja.js'; // Import categorias caja routes
 import informesRoutes from './routes/informes.js'; // Import informes routes
+import presupuestosRoutes from './routes/presupuestos.js'; // Import presupuestos routes
 
 app.use('/api', apiRoutes);
 app.use('/api/practicantes', practicantesRoutes);
@@ -62,6 +63,7 @@ app.use('/api/deudas', deudasRoutes); // Mount deudas routes
 app.use('/api/caja', cajaRoutes); // Mount caja routes
 app.use('/api/categorias-caja', categoriasCajaRoutes); // Mount categorias caja routes
 app.use('/api/informes', informesRoutes); // Mount informes routes
+app.use('/api/presupuestos', presupuestosRoutes); // Mount presupuestos routes
 
 // 404 handler
 app.use((req, res) => {

@@ -177,6 +177,10 @@ export class TipoAbonoForm {
 
     const updateVisibility = () => {
         const val = categoriaSelect.value;
+        const maxPersonasInput = form.querySelector('#max_personas');
+        const clasesPorSemanaInput = form.querySelector('#clases_por_semana');
+        const duracionDiasInput = form.querySelector('#duracion_dias');
+
         if (val === 'particular' || val === 'compartida') {
             horariosGroup.style.display = 'none';
             clasesPorSemanaGroup.style.display = 'none';
@@ -184,6 +188,15 @@ export class TipoAbonoForm {
             maxPersonasGroup.style.display = val === 'compartida' ? 'block' : 'none';
             lugarGroup.style.display = 'block';
             lugarSelect.required = true;
+            
+            // Adjust validation constraints when hidden
+            if (val === 'particular') {
+                maxPersonasInput.min = "1";
+            } else {
+                maxPersonasInput.min = "2";
+            }
+            clasesPorSemanaInput.min = "0"; // No constraint when hidden
+            duracionDiasInput.min = "0";
         } else { // grupal / otro
             horariosGroup.style.display = 'block';
             clasesPorSemanaGroup.style.display = 'block';
@@ -191,6 +204,12 @@ export class TipoAbonoForm {
             maxPersonasGroup.style.display = 'none';
             lugarGroup.style.display = 'none';
             lugarSelect.required = false;
+            
+            // Reset validation constraints when hidden
+            maxPersonasInput.min = "1"; 
+            clasesPorSemanaInput.min = "1";
+            duracionDiasInput.min = "0";
+            
             clearFieldError(lugarSelect);
         }
     };
