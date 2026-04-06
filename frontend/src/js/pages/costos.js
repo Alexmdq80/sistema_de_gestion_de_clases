@@ -415,10 +415,10 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
 
             // Para las clases en el flujo de caja, queremos:
             // 1. Clases que ocurrieron en el rango (para ver lo "esperado")
-            // 2. Clases que se PAGARON en el rango (si no estamos en modo devengado)
+            // 2. Clases que se PAGARON en el rango (usamos fecha de pago para devengamiento de alquiler)
             const clasesFilters = { 
                 ...this.filters,
-                include_paid_in_range: !this.filterByMesAbono // Respect accrual vs cash flow
+                include_paid_in_range: true // Always use payment date if available
             };
 
             const clasesForHoursFilters = {

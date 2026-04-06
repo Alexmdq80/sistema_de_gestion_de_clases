@@ -102,13 +102,13 @@ export class Pago {
                 SELECT 
                     c.id * -1 as id, c.profesor_id as practicante_id, NULL as abono_id, NULL as deuda_id, NULL as pago_socio_id, 
                     CONCAT(
-                        CASE MONTH(c.fecha)
+                        CASE MONTH(COALESCE(c.fecha_pago_espacio, c.fecha))
                             WHEN 1 THEN 'Enero' WHEN 2 THEN 'Febrero' WHEN 3 THEN 'Marzo'
                             WHEN 4 THEN 'Abril' WHEN 5 THEN 'Mayo' WHEN 6 THEN 'Junio'
                             WHEN 7 THEN 'Julio' WHEN 8 THEN 'Agosto' WHEN 9 THEN 'Septiembre'
                             WHEN 10 THEN 'Octubre' WHEN 11 THEN 'Noviembre' WHEN 12 THEN 'Diciembre'
                         END, 
-                        ' ', YEAR(c.fecha)
+                        ' ', YEAR(COALESCE(c.fecha_pago_espacio, c.fecha))
                     ) as mes_abono, 
                     c.lugar_id, 
                     COALESCE(c.fecha_pago_espacio, c.fecha) as fecha, 
