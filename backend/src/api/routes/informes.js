@@ -218,6 +218,7 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
         AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0 OR c.estado IN ('cancelada', 'suspendida', 'sin_actividad'))
         AND (l.id = ? OR l.parent_id = ?)
         AND COALESCE(c.fecha_pago_espacio, c.fecha) >= ? AND COALESCE(c.fecha_pago_espacio, c.fecha) <= ?
+        ORDER BY l.nombre, c.fecha, c.hora
     `;
     const paramsAlquileres = [lugar_id, lugar_id, firstDay, lastDay];
 

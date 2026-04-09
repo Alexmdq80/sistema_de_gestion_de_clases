@@ -27,7 +27,9 @@ router.get('/', asyncHandler(async (req, res) => {
             SELECT 
                 d.id, d.practicante_id, 
                 (d.monto - IFNULL((SELECT SUM(monto) FROM Pago WHERE deuda_id = d.id AND deleted_at IS NULL), 0)) as monto,
-                d.concepto, d.fecha, d.estado, d.created_at,
+                d.concepto, d.fecha, d.estado,
+                NULL as original_estado,
+                d.created_at,
                 p.nombre_completo as practicante_nombre,
                 'manual' as tipo,
                 d.monto as monto_original
@@ -43,21 +45,16 @@ router.get('/', asyncHandler(async (req, res) => {
                 (IFNULL(a.monto_pactado, 0) - IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0)) as monto,
                 CONCAT('Saldo Abono: ', ta.nombre, IF(a.mes_abono IS NOT NULL, CONCAT(' (', a.mes_abono, ')'), '')) as concepto,
                 a.fecha_inicio as fecha,
-                'pendiente' as estado, 
-                a.created_at,
-                pr.nombre_completo as practicante_nombre,
+                CASE WHEN a.estado = 'cancelado' THEN 'cancelada' ELSE 'pendiente' END as estado,
+                a.estado as original_estado,
+                a.created_at,                pr.nombre_completo as practicante_nombre,
                 'abono' as tipo,
                 IFNULL(a.monto_pactado, 0) as monto_original
             FROM Abono a
             JOIN Practicante pr ON a.practicante_id = pr.id
             JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
-            WHERE a.deleted_at IS NULL 
-            AND (
-                a.estado != 'cancelado' 
-                OR 
-                IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0) > 0
-            )
-            HAVING monto > 0
+            WHERE a.deleted_at IS NULL
+            HAVING monto > 0 OR (original_estado = 'cancelado' AND monto >= 0)
         ) as todas_deudas
         WHERE 1=1
     `;
