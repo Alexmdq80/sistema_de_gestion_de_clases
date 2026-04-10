@@ -54,13 +54,18 @@ router.get('/', asyncHandler(async (req, res) => {
         throw new AppError('Abono ID y Monto son obligatorios', 400);
     }
 
+    // Use current month/year for mes_abono if not specified, 
+    // to align with the user's request for debt/extra payments.
+    const effectiveMesAbono = PagoService.formatMesAbono(fecha_pago || new Date().toISOString().split('T')[0]);
+
     const pago = await PagoService.addPaymentToAbono(
         parseInt(abono_id, 10),
         parseFloat(monto),
         metodo_pago,
         fecha_pago,
         notas,
-        userId
+        userId,
+        effectiveMesAbono
     );
 
     res.status(201).json({ data: pago });

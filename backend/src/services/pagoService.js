@@ -9,6 +9,20 @@ import pool from '../config/database.js'; // Import pool to get connection
 
 export class PagoService {
     /**
+     * Helper to format a date into a mes_abono string (e.g., "Abril 2026")
+     * @param {string|Date} date 
+     * @returns {string}
+     */
+    static formatMesAbono(date) {
+        const d = typeof date === 'string' ? new Date(date + 'T12:00:00') : date;
+        const monthNames = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ];
+        return `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+    }
+
+    /**
      * Create a new payment for a practicante
      * @param {number} practicanteId - ID of the practicante
      * @param {number} tipoAbonoId - ID of the TipoAbono
@@ -159,15 +173,16 @@ export class PagoService {
      * @param {string} fecha 
      * @param {string} notas 
      * @param {number} userId 
+     * @param {string} [mes_abono=null] - Optional override for the accrual month
      */
-    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId) {
+    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId, mes_abono = null) {
         const abono = await Abono.findById(abonoId);
         if (!abono) throw new AppError('Abono no encontrado', 404);
 
         const pagoData = {
             practicante_id: abono.practicante_id,
             abono_id: abono.id,
-            mes_abono: abono.mes_abono,
+            mes_abono: mes_abono || abono.mes_abono,
             lugar_id: abono.lugar_id,
             fecha: fecha || new Date().toISOString().split('T')[0],
             monto: monto,

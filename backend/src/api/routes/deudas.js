@@ -86,6 +86,9 @@ router.put('/:id/pagar', asyncHandler(async (req, res) => {
     const { monto_esperado, monto_pago } = req.body;
     const userId = req.user.userId;
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentMesAbono = PagoService.formatMesAbono(todayStr);
+
     if (tipo === 'abono') {
         // Handle Abono debt payment
         const abono = await Abono.findById(id);
@@ -103,13 +106,15 @@ router.put('/:id/pagar', asyncHandler(async (req, res) => {
         if (balance.saldo_pendiente <= 0) throw new AppError('Este abono no tiene saldo pendiente', 400);
 
         // Record the payment to clear the debt
+        // Use current month/year for mes_abono as requested by the user for debt payments
         const newPago = await PagoService.addPaymentToAbono(
             id, 
             monto_pago || balance.saldo_pendiente, 
             'efectivo', // Default for quick pay
-            new Date().toISOString().split('T')[0],
+            todayStr,
             `[PAGO REGISTRADO DESDE GESTIÓN DE DEUDAS]`,
-            userId
+            userId,
+            currentMesAbono
         );
 
         return res.json({ 
@@ -132,11 +137,20 @@ router.put('/:id/pagar', asyncHandler(async (req, res) => {
     }
 
     // Crear un Pago con deuda_id = :id y monto = monto_pago
+    // Set mes_abono for manual debts to ensure they appear in the monthly balance reports
+    let lugarId = null;
+    if (deuda.clase_id) {
+        const [clases] = await pool.execute('SELECT lugar_id FROM Clase WHERE id = ?', [deuda.clase_id]);
+        if (clases.length > 0) lugarId = clases[0].lugar_id;
+    }
+
     const newPago = await Pago.create({
         practicante_id: deuda.practicante_id,
         deuda_id: id,
         monto: monto_pago || deuda.monto,
-        fecha: new Date().toISOString().split('T')[0],
+        mes_abono: currentMesAbono,
+        lugar_id: lugarId,
+        fecha: todayStr,
         metodo_pago: 'efectivo',
         notas: `[PAGO DE DEUDA MANUAL: ${deuda.concepto}]`
     }, null, userId);
