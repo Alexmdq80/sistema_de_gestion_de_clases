@@ -38,6 +38,8 @@ export class Practicante {
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
         this.deleted_at = data.deleted_at || null;
+        this.activo = data.activo !== undefined ? !!data.activo : true;
+        this.archivado_at = data.archivado_at || null;
     }
 
     /**
@@ -54,8 +56,8 @@ export class Practicante {
         emergencia_nombre, emergencia_telefono, obra_social, obra_social_nro,
         emergencia_servicio, emergencia_servicio_telefono, ocupacion, estudios,
         actividad_fisica_actual, actividad_fisica_detalle, actividad_fisica_anios_inactivo,
-        actividad_fisica_anterior, observaciones_adicionales
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        actividad_fisica_anterior, observaciones_adicionales, activo, archivado_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
         const values = [
@@ -84,7 +86,9 @@ export class Practicante {
             data.actividad_fisica_detalle || null,
             data.actividad_fisica_anios_inactivo || null,
             data.actividad_fisica_anterior || null,
-            data.observaciones_adicionales || null
+            data.observaciones_adicionales || null,
+            data.activo !== undefined ? data.activo : true,
+            (!data.activo && data.activo !== undefined) ? new Date() : null
         ];
 
         const [result] = await pool.execute(sql, values);
@@ -125,7 +129,7 @@ export class Practicante {
      * @returns {Promise<Object>} - { data: Practicante[], pagination: {...} }
      */
     static async findAll(options = {}) {
-        const { search = '', page = 1, limit = 50, es_profesor } = options;
+        const { search = '', page = 1, limit = 50, es_profesor, activo } = options;
 
         // Validate and convert to integers
         const pageNum = parseInt(page, 10) || 1;
@@ -145,6 +149,12 @@ export class Practicante {
         if (es_profesor !== undefined) {
             whereClause += ' AND es_profesor = ?';
             searchParams.push(es_profesor ? 1 : 0);
+        }
+
+        // Add filtering by activo status
+        if (activo !== undefined) {
+            whereClause += ' AND activo = ?';
+            searchParams.push(activo ? 1 : 0);
         }
 
         // Get total count
@@ -270,13 +280,32 @@ export class Practicante {
             'emergencia_nombre', 'emergencia_telefono', 'obra_social', 'obra_social_nro',
             'emergencia_servicio', 'emergencia_servicio_telefono', 'ocupacion', 'estudios',
             'actividad_fisica_actual', 'actividad_fisica_detalle', 'actividad_fisica_anios_inactivo',
-            'actividad_fisica_anterior', 'observaciones_adicionales'
-        ];
+            'actividad_fisica_anterior', 'observaciones_adicionales', 'activo', 'archivado_at'
+            ];
 
         const updates = [];
         const values = [];
 
+        // Special handling for activo/archivado_at
+        if (data.hasOwnProperty('activo')) {
+            const newActivo = !!data.activo;
+            if (newActivo !== !!currentData.activo) {
+                updates.push('activo = ?');
+                values.push(newActivo);
+                
+                updates.push('archivado_at = ?');
+                const archivadoAt = newActivo ? null : new Date();
+                values.push(archivadoAt);
+                
+                // Remove from allowed fields processing if already handled
+                data.activo_handled = true;
+            }
+        }
+
         for (const field of allowedFields) {
+            if (field === 'activo' && data.activo_handled) continue;
+            if (field === 'archivado_at') continue; // Handled by activo logic
+
             if (data.hasOwnProperty(field)) {
                 updates.push(`${field} = ?`);
                 values.push(data[field] === undefined ? null : data[field]);
@@ -434,7 +463,9 @@ export class Practicante {
             clases_restantes: this.clases_restantes !== undefined ? this.clases_restantes : null,
             created_at: this.created_at,
             updated_at: this.updated_at,
-            deleted_at: this.deleted_at
+            deleted_at: this.deleted_at,
+            activo: this.activo,
+            archivado_at: this.archivado_at
         };
     }
 }

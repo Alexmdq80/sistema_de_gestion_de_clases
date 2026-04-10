@@ -68,6 +68,12 @@ router.get('/padron-socios-pagos', asyncHandler(async (req, res) => {
     ];
     const mesAbono = `${monthNames[mes - 1]} ${anio}`;
 
+    // Calculate the threshold date: 2 months before the report month (first day of report month minus 2 months)
+    const reportDate = new Date(anio, mes - 1, 1);
+    const thresholdDate = new Date(reportDate);
+    thresholdDate.setMonth(thresholdDate.getMonth() - 2);
+    const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
+
     let sql = `
         SELECT 
             s.id as sistema_id,
@@ -78,6 +84,8 @@ router.get('/padron-socios-pagos', asyncHandler(async (req, res) => {
             pr.telefono,
             pr.email,
             pr.direccion,
+            pr.activo,
+            pr.archivado_at,
             l.nombre as sede_nombre,
             ps.mes_abono,
             ps.monto,
@@ -103,10 +111,11 @@ router.get('/padron-socios-pagos', asyncHandler(async (req, res) => {
         LEFT JOIN PagoSocio ps ON ps.socio_id = s.id 
             AND ps.mes_abono = ? 
             AND ps.deleted_at IS NULL
-        -- Solo incluimos socios registrados en esa sede
+        -- Solo incluimos socios registrados en esa sede que estén activos o archivados hace menos de 2 meses
         WHERE s.deleted_at IS NULL
+        AND (pr.activo = 1 OR pr.archivado_at >= ?)
     `;
-    const params = [mesAbono];
+    const params = [mesAbono, thresholdDateStr];
 
     if (lugar_id) {
         sql += ' AND (l.id = ? OR l.parent_id = ?)';

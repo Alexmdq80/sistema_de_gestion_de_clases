@@ -44,6 +44,11 @@ export class PracticanteService {
   /**
    * Find all practicantes with search and pagination
    * @param {Object} options - Search options
+   * @param {string} options.search - Search term (nombre, telefono, email)
+   * @param {number} options.page - Page number
+   * @param {number} options.limit - Results per page
+   * @param {boolean} options.es_profesor - Filter by teacher status
+   * @param {boolean} [options.activo] - Filter by active status (defaults to true if undefined)
    * @returns {Promise<Object>}
    */
   static async findAll(options = {}) {

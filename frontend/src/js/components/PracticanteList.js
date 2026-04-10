@@ -19,6 +19,7 @@ export class PracticanteList {
       onReceiveCuota: options.onReceiveCuota || (() => {}),
       onPayAbono: options.onPayAbono || (() => {}),
       onLoad: options.onLoad || (() => {}),
+      filterActivo: options.filterActivo, // New option for filtering active status
     };
     this.practicantes = [];
     this.currentPage = 1;
@@ -197,8 +198,11 @@ export class PracticanteList {
       if (this.searchTerm) {
         params.search = this.searchTerm;
       }
+      if (this.options.filterActivo !== undefined) {
+        params.activo = this.options.filterActivo;
+      }
 
-      const result = await practicanteApi.getAll(params.search, params.page, params.limit); // Use practicanteApi.getAll
+      const result = await practicanteApi.getAll(params.search, params.page, params.limit, params.activo); // Use practicanteApi.getAll
       this.practicantes = result.data || [];
       this.totalPages = result.pagination?.totalPages || 1;
       this.currentPage = result.pagination?.page || 1;
@@ -231,6 +235,7 @@ export class PracticanteList {
             <th>Clases Rest.</th>
             <th>Teléfono</th>
             <th>Acciones</th>
+            <th>Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -293,12 +298,26 @@ export class PracticanteList {
                   Editar
                 </button>
                 <button 
+                  class="btn ${practicante.activo ? 'btn-warning' : 'btn-success'}" 
+                  data-action="toggle-activo" 
+                  data-id="${practicante.id}"
+                  data-activo="${practicante.activo}"
+                  style="margin-right: 0.5rem;"
+                >
+                  ${practicante.activo ? 'Archivar' : 'Desarchivar'}
+                </button>
+                <button 
                   class="btn btn-danger" 
                   data-action="delete" 
                   data-id="${practicante.id}"
                 >
                   Eliminar
                 </button>
+              </td>
+              <td>
+                <span class="badge ${practicante.activo ? 'badge-success' : 'badge-secondary'}">
+                  ${practicante.activo ? 'Activo' : 'Archivado'}
+                </span>
               </td>
             </tr>
           `).join('')}
@@ -392,6 +411,9 @@ export class PracticanteList {
       case 'cuota':
         this.options.onReceiveCuota(practicante);
         break;
+      case 'toggle-activo':
+        this.togglePracticanteActivo(id, practicante.activo);
+        break;
     }
   }
 
@@ -403,6 +425,22 @@ export class PracticanteList {
       if (this.options.onDelete) {
         this.options.onDelete(id);
       }
+    } catch (error) {
+      displayApiError(error, this.container);
+    }
+  }
+
+  async togglePracticanteActivo(id, currentActivoStatus) {
+    const newActivoStatus = !currentActivoStatus;
+    const actionText = newActivoStatus ? 'desarchivar' : 'archivar';
+    if (!confirm(`¿Está seguro de que desea ${actionText} este practicante?`)) {
+      return;
+    }
+
+    try {
+      await practicanteApi.update(id, { activo: newActivoStatus });
+      showSuccess(`Practicante ${newActivoStatus ? 'desarchivado' : 'archivado'} correctamente`, this.container);
+      this.loadPracticantes();
     } catch (error) {
       displayApiError(error, this.container);
     }

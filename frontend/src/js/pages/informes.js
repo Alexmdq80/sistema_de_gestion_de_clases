@@ -13,6 +13,7 @@ export class InformesPage {
         this.selectedLugarId = '';
         this.reportBasis = 'pago'; // 'pago' | 'mes'
         this.hideBirthYear = false;
+        this.observation = ''; // New observation field
         
         this.lugares = [];
         this.data = [];
@@ -66,6 +67,12 @@ export class InformesPage {
                         <button id="print-report-btn" class="btn btn-outline-secondary btn-block">
                             <i class="fas fa-print"></i> Imprimir
                         </button>
+                    </div>
+                </div>
+                <div class="form-row mt-3">
+                    <div class="form-group col-12 mb-0">
+                        <label for="report-observation-input" class="small font-weight-bold text-muted mb-1">Observación final para el informe:</label>
+                        <textarea class="form-control" id="report-observation-input" rows="2" placeholder="Escriba aquí cualquier observación adicional que desee incluir al final del informe...">${this.observation}</textarea>
                     </div>
                 </div>
             </div>
@@ -154,7 +161,27 @@ export class InformesPage {
             };
         }
 
+        const obsInput = this.container.querySelector('#report-observation-input');
+        if (obsInput) {
+            obsInput.oninput = (e) => {
+                this.observation = e.target.value;
+                this.updateReportObservation(this.observation);
+            };
+        }
+
         this.container.querySelector('#print-report-btn').onclick = () => window.print();
+    }
+
+    updateReportObservation(text) {
+        const displayEl = this.container.querySelector('#report-observation-display');
+        if (displayEl) {
+            displayEl.innerHTML = text ? `<strong>Observaciones:</strong><br>${text.replace(/\n/g, '<br>')}` : '';
+            const containerEl = this.container.querySelector('#report-observation-container');
+            if (containerEl) {
+                if (text) containerEl.classList.remove('no-print');
+                else containerEl.classList.add('no-print');
+            }
+        }
     }
 
     async loadReport() {
@@ -414,6 +441,23 @@ export class InformesPage {
         `;
     }
 
+    renderReportFooter() {
+        const observationHtml = this.observation 
+            ? `<div id="report-observation-container" class="mt-4 p-3 bg-light border rounded mb-4">
+                 <div id="report-observation-display">${this.observation ? `<strong>Observaciones:</strong><br>${this.observation.replace(/\n/g, '<br>')}` : ''}</div>
+               </div>`
+            : `<div id="report-observation-container" class="mt-4 p-3 bg-light border rounded mb-4 no-print">
+                 <div id="report-observation-display"></div>
+               </div>`;
+
+        return `
+            ${observationHtml}
+            <div class="mt-5 text-right small text-muted">
+                Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
+            </div>
+        `;
+    }
+
     renderReportData(content) {
         if (!this.data || (Array.isArray(this.data) && this.data.length === 0 && this.currentReport !== 'balance')) {
             content.innerHTML = '<div class="alert alert-info">No hay datos para los criterios seleccionados.</div>';
@@ -510,9 +554,7 @@ export class InformesPage {
                     <i class="fas fa-info-circle"></i> <strong>Nota:</strong> Este balance incluye todos los movimientos de caja registrados y el costo de alquiler de salones. Las horas se calculan en base a la duración programada de las clases impartidas en el periodo.
                 </div>
 
-                <div class="mt-5 text-right small text-muted">
-                    Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }
@@ -640,9 +682,7 @@ export class InformesPage {
                     </div>
                 </div>
 
-                <div class="mt-5 text-right small text-muted">
-                    Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }
@@ -651,6 +691,22 @@ export class InformesPage {
         const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
         const isSedeFiltered = this.selectedLugarId !== '';
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
+
+        // Helper to check if it should be strikethrough
+        const shouldStrike = (item) => {
+            if (item.activo) return false;
+            if (!item.archivado_at) return false;
+            
+            const archivadoDate = new Date(item.archivado_at);
+            const reportDate = new Date(this.selectedYear, this.selectedMonth - 1, 1);
+            
+            // Previous month threshold
+            const prevMonthThreshold = new Date(reportDate);
+            prevMonthThreshold.setMonth(prevMonthThreshold.getMonth() - 1);
+            
+            // archivadoDate >= prevMonthThreshold (archived this month or last month)
+            return archivadoDate >= prevMonthThreshold;
+        };
 
         content.innerHTML = `
             <div class="report-paper p-4 bg-white border" style="max-width: 100%; width: 100%;">
@@ -675,12 +731,15 @@ export class InformesPage {
                             </tr>
                         </thead>
                         <tbody>
-                            ${this.data.map((item, index) => `
-                                <tr data-index="${index}">
+                            ${this.data.map((item, index) => {
+                                const strike = shouldStrike(item);
+                                const rowStyle = strike ? 'text-decoration: line-through; color: #999;' : '';
+                                return `
+                                <tr data-index="${index}" style="${rowStyle}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                     <td><small class="text-muted">${item.sistema_id}</small></td>
                                     <td><strong>${item.numero_socio || '-'}</strong></td>
-                                    <td>${item.nombre_completo}</td>
+                                    <td>${item.nombre_completo} ${!item.activo ? '<small class="text-danger no-print">(Archivado)</small>' : ''}</td>
                                     <td>${item.dni || '-'}</td>
                                     <td>${item.fecha_nacimiento ? formatDateDashes(item.fecha_nacimiento) : '-'}</td>
                                     <td><small>${item.telefono || '-'}</small></td>
@@ -689,16 +748,15 @@ export class InformesPage {
                                     ${!isSedeFiltered ? `<td>${item.sede_nombre}</td>` : ''}
                                     <td><span class="badge badge-light">${item.categoria_cuota}</span></td>
                                     <td class="text-right">${item.monto !== null && item.monto !== undefined ? '$' + parseFloat(item.monto).toFixed(2) : '-'}</td>
-                                    </tr>                            `).join('')}
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
-                <div class="mt-4 flex justify-between small text-muted">
+                <div class="mt-4 flex justify-between small text-muted no-print">
                     <span id="padron-total-display">Total de registros: ${this.data.length}</span>
-                    <span class="text-right">
-                        Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                    </span>
                 </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }
@@ -756,12 +814,10 @@ export class InformesPage {
                         }).join('')}
                     </tbody>
                 </table>
-                <div class="mt-4 flex justify-between small text-muted">
+                <div class="mt-4 flex justify-between small text-muted no-print">
                     <span id="birthday-total-display">Total de practicantes: ${this.data.length}</span>
-                    <span class="text-right">
-                        Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                    </span>
                 </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }
@@ -805,9 +861,7 @@ export class InformesPage {
                         </tr>
                     </tfoot>
                 </table>
-                <div class="mt-5 text-right small text-muted">
-                    Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }
@@ -863,9 +917,7 @@ export class InformesPage {
                         </tr>
                     </tfoot>
                 </table>
-                <div class="mt-5 text-right small text-muted">
-                    Documento generado por el Sistema de Gestión de Clases por Alex J. Actis Lobos el: ${new Date().toLocaleString()}
-                </div>
+                ${this.renderReportFooter()}
             </div>
         `;
     }

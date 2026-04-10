@@ -14,7 +14,7 @@ router.use(authenticateToken); // Apply authentication middleware to all routes 
  * List all practicantes with optional search and pagination
  */
 router.get('/', asyncHandler(async (req, res) => {
-  const { search = '', page = 1, limit = 50, es_profesor } = req.query;
+  const { search = '', page = 1, limit = 50, es_profesor, activo } = req.query;
   
   // Validate pagination parameters
   const pageNum = parseInt(page, 10);
@@ -32,7 +32,8 @@ router.get('/', asyncHandler(async (req, res) => {
     search: String(search),
     page: pageNum,
     limit: limitNum,
-    es_profesor: es_profesor !== undefined ? es_profesor === 'true' : undefined
+    es_profesor: es_profesor !== undefined ? es_profesor === 'true' : undefined,
+    activo: activo !== undefined ? activo === 'true' : undefined
   });
 
   res.json(result);

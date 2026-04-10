@@ -63,7 +63,13 @@ export const authApi = {
 };
 
 export const practicanteApi = {
-    getAll: (search = '', page = 1, limit = 50) => makeRequest(`/practicantes?search=${search}&page=${page}&limit=${limit}`, 'GET', null, true),
+    getAll: (search = '', page = 1, limit = 50, activo = undefined) => {
+        let queryString = `/practicantes?search=${search}&page=${page}&limit=${limit}`;
+        if (activo !== undefined) {
+            queryString += `&activo=${activo}`;
+        }
+        return makeRequest(queryString, 'GET', null, true);
+    },
     getById: (id) => makeRequest(`/practicantes/${id}`, 'GET', null, true),
     create: (data) => makeRequest('/practicantes', 'POST', data, true),
     update: (id, data) => makeRequest(`/practicantes/${id}`, 'PUT', data, true),

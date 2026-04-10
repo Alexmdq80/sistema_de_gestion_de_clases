@@ -127,7 +127,7 @@ export class Asistencia {
                 AND ab.fecha_inicio <= ?
                 AND ab.fecha_vencimiento >= ?
             LEFT JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
-            WHERE p.deleted_at IS NULL AND p.es_profesor = 0
+            WHERE p.deleted_at IS NULL AND p.es_profesor = 0 AND p.activo = 1
             GROUP BY p.id, p.nombre_completo
             ORDER BY p.nombre_completo ASC
         `;
