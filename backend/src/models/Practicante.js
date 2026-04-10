@@ -40,6 +40,7 @@ export class Practicante {
         this.deleted_at = data.deleted_at || null;
         this.activo = data.activo !== undefined ? !!data.activo : true;
         this.archivado_at = data.archivado_at || null;
+        this.reingreso_at = data.reingreso_at || null;
     }
 
     /**
@@ -56,8 +57,8 @@ export class Practicante {
         emergencia_nombre, emergencia_telefono, obra_social, obra_social_nro,
         emergencia_servicio, emergencia_servicio_telefono, ocupacion, estudios,
         actividad_fisica_actual, actividad_fisica_detalle, actividad_fisica_anios_inactivo,
-        actividad_fisica_anterior, observaciones_adicionales, activo, archivado_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        actividad_fisica_anterior, observaciones_adicionales, activo, archivado_at, reingreso_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
         const values = [
@@ -88,7 +89,8 @@ export class Practicante {
             data.actividad_fisica_anterior || null,
             data.observaciones_adicionales || null,
             data.activo !== undefined ? data.activo : true,
-            (!data.activo && data.activo !== undefined) ? new Date() : null
+            (!data.activo && data.activo !== undefined) ? new Date() : null,
+            null // reingreso_at is null initially
         ];
 
         const [result] = await pool.execute(sql, values);
@@ -280,13 +282,13 @@ export class Practicante {
             'emergencia_nombre', 'emergencia_telefono', 'obra_social', 'obra_social_nro',
             'emergencia_servicio', 'emergencia_servicio_telefono', 'ocupacion', 'estudios',
             'actividad_fisica_actual', 'actividad_fisica_detalle', 'actividad_fisica_anios_inactivo',
-            'actividad_fisica_anterior', 'observaciones_adicionales', 'activo', 'archivado_at'
+            'actividad_fisica_anterior', 'observaciones_adicionales', 'activo', 'archivado_at', 'reingreso_at'
             ];
 
         const updates = [];
         const values = [];
 
-        // Special handling for activo/archivado_at
+        // Special handling for activo/archivado_at/reingreso_at
         if (data.hasOwnProperty('activo')) {
             const newActivo = !!data.activo;
             if (newActivo !== !!currentData.activo) {
@@ -297,6 +299,11 @@ export class Practicante {
                 const archivadoAt = newActivo ? null : new Date();
                 values.push(archivadoAt);
                 
+                if (newActivo) {
+                    updates.push('reingreso_at = ?');
+                    values.push(new Date());
+                }
+                
                 // Remove from allowed fields processing if already handled
                 data.activo_handled = true;
             }
@@ -304,7 +311,7 @@ export class Practicante {
 
         for (const field of allowedFields) {
             if (field === 'activo' && data.activo_handled) continue;
-            if (field === 'archivado_at') continue; // Handled by activo logic
+            if (field === 'archivado_at' || field === 'reingreso_at') continue; // Handled by activo logic
 
             if (data.hasOwnProperty(field)) {
                 updates.push(`${field} = ?`);
@@ -465,7 +472,8 @@ export class Practicante {
             updated_at: this.updated_at,
             deleted_at: this.deleted_at,
             activo: this.activo,
-            archivado_at: this.archivado_at
+            archivado_at: this.archivado_at,
+            reingreso_at: this.reingreso_at
         };
     }
 }

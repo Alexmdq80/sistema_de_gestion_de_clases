@@ -86,6 +86,8 @@ router.get('/padron-socios-pagos', asyncHandler(async (req, res) => {
             pr.direccion,
             pr.activo,
             pr.archivado_at,
+            pr.reingreso_at,
+            pr.created_at,
             l.nombre as sede_nombre,
             ps.mes_abono,
             ps.monto,

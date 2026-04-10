@@ -734,12 +734,36 @@ export class InformesPage {
                             ${this.data.map((item, index) => {
                                 const strike = shouldStrike(item);
                                 const rowStyle = strike ? 'text-decoration: line-through; color: #999;' : '';
+
+                                // Check if it's a new practitioner (added in the same month/year as the report)
+                                // or if they re-entered this month
+                                let isNew = false;
+                                const reportMonth = parseInt(this.selectedMonth);
+                                const reportYear = parseInt(this.selectedYear);
+
+                                if (item.created_at) {
+                                    const createDate = new Date(item.created_at);
+                                    if (createDate.getMonth() + 1 === reportMonth && createDate.getFullYear() === reportYear) {
+                                        isNew = true;
+                                    }
+                                }
+
+                                if (!isNew && item.reingreso_at) {
+                                    const reingresoDate = new Date(item.reingreso_at);
+                                    if (reingresoDate.getMonth() + 1 === reportMonth && reingresoDate.getFullYear() === reportYear) {
+                                        isNew = true;
+                                    }
+                                }
                                 return `
                                 <tr data-index="${index}" style="${rowStyle}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                     <td><small class="text-muted">${item.sistema_id}</small></td>
                                     <td><strong>${item.numero_socio || '-'}</strong></td>
-                                    <td>${item.nombre_completo} ${!item.activo ? '<small class="text-danger no-print">(Archivado)</small>' : ''}</td>
+                                    <td>
+                                       ${item.nombre_completo} 
+                                       ${!item.activo ? '<small class="text-danger no-print">(Archivado)</small>' : ''}
+                                       ${isNew ? '<small class="text-info font-weight-bold ml-1">(Ingreso/Reingreso)</small>' : ''}
+                                    </td>
                                     <td>${item.dni || '-'}</td>
                                     <td>${item.fecha_nacimiento ? formatDateDashes(item.fecha_nacimiento) : '-'}</td>
                                     <td><small>${item.telefono || '-'}</small></td>
