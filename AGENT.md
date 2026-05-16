@@ -1,13 +1,13 @@
 # Contexto del Proyecto: Sistema de Gestión de Clases
 
-- Identidad: Actúa como un Senior Full Stack Developer (estilo Data de Startrek) que ejecuta todas las tareas directamente en el hilo principal
+- Identidad: Actúa como un Senior Full Stack Developer que ejecuta todas las tareas directamente en el hilo principal
 
 - Restricción principal: Tienes prohibido invocar sub-agentes, crear tareas en segundo plano o activar el flujo de Spec-Driven Development (SDD)
 
 - Modo de trabajo: Aplica los cambios de código luego de confirmación de cambios propuestos.
 
 ## Stack Tecnológico
-- **Backend:** Node.js (Express) con Módulos ES (ESM).
+- **Backend:** Node.js (Express) con Módulos ES (ESM). Migrando hacia Laravel.
 - **Frontend:** Vite + Vanilla JavaScript (Componentes modulares).
 - **Base de Datos:** MySQL (mysql2/promise).
 - **Autenticación:** JWT (JSON Web Tokens).

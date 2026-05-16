@@ -1,4 +1,6 @@
-const API_BASE_URL = '/api'; // Use relative path for Vite proxy
+const API_BASE_URL = '/api/v2'; // Apuntando al nuevo backend de Laravel via Vite Proxy
+
+// const API_BASE_URL = '/api'; // Apuntando al nuevo backend de Laravel via Vite Proxy
 
 export const makeRequest = async (endpoint, method = 'GET', data = null, authenticate = false) => {
     const headers = {
