@@ -206,7 +206,12 @@ export class Practicante {
                      JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id 
                      WHERE ab.practicante_id = p.id 
                        AND (ta.categoria IN ('particular', 'compartida') OR ta.duracion_dias = 0)
-                       AND ab.deleted_at IS NULL)
+                       AND ab.deleted_at IS NULL
+                       AND EXISTS (
+                           SELECT 1 FROM Pago pg 
+                           WHERE pg.abono_id = ab.id 
+                             AND pg.deleted_at IS NULL
+                       ))
                     -
                     (SELECT COUNT(*) 
                      FROM Asistencia asis 
@@ -214,6 +219,7 @@ export class Practicante {
                      WHERE asis.practicante_id = p.id 
                        AND asis.asistio = 1 
                        AND cl.deleted_at IS NULL
+                       AND cl.estado NOT IN ('cancelada', 'sin_actividad', 'suspendida')
                        AND (cl.tipo = 'flexible' OR EXISTS (
                            SELECT 1 FROM TipoAbono ta2 
                            JOIN Abono ab2 ON ta2.id = ab2.tipo_abono_id

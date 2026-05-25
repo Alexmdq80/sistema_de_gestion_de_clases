@@ -77,6 +77,11 @@ router.post('/clases/:id/practicantes', asyncHandler(async (req, res) => {
         throw new AppError('No se puede modificar la asistencia de una clase cerrada', 400);
     }
 
+    // NEW RESTRICTION: Do not allow attendance in non-executable states
+    if (['cancelada', 'suspendida', 'sin_actividad'].includes(clase.estado)) {
+        throw new AppError(`No se puede registrar asistencia en una clase con estado "${clase.estado}"`, 400);
+    }
+
     if (updates && Array.isArray(updates)) {
         for (const u of updates) {
             await Asistencia.upsert({
@@ -299,6 +304,12 @@ router.post('/clases/:id/registrar', asyncHandler(async (req, res) => {
     // 2. Validar si se está marcando asistencia según el tipo y estado
     if (asistencias && asistencias.length > 0) {
         const targetEstado = estado || clase.estado;
+
+        // NEW RESTRICTION: Do not allow attendance in non-executable states
+        if (['cancelada', 'suspendida', 'sin_actividad'].includes(targetEstado)) {
+            throw new AppError(`No se puede marcar asistencia si el estado de la clase es "${targetEstado}"`, 400);
+        }
+
         if (clase.tipo === 'grupal') {
             if (targetEstado !== 'realizada') {
                 throw new AppError('Solo se puede marcar asistencia en clases grupales con estado "Realizada"', 400);
