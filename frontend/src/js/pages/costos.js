@@ -744,6 +744,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                 <th>Categoría</th>
                                 <th>Descripción</th>
                                 <th>Monto</th>
+                                <th class="text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -757,6 +758,14 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                     </td>
                                     <td><small>${m.descripcion || '-'}</small></td>
                                     <td class="${m.tipo === 'ingreso' ? 'text-success' : 'text-danger'}"><strong>$${m.monto.toFixed(2)}</strong></td>
+                                    <td class="text-right">
+                                        <button class="btn btn-sm ${m.usado_en_clase_id ? 'btn-light text-muted' : 'btn-outline-danger'} delete-mov-btn" 
+                                            data-id="${m.id}" 
+                                            ${m.usado_en_clase_id ? 'disabled' : ''}
+                                            title="${m.usado_en_clase_id ? 'No se puede eliminar una nota ya usada' : 'Eliminar movimiento'}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                             ${this.movimientos.length === 0 ? '<tr><td colspan="5" class="text-center text-muted">No hay movimientos extra en este periodo.</td></tr>' : ''}
@@ -772,6 +781,19 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         content.querySelectorAll('.unmark-paid-btn').forEach(btn => btn.onclick = () => this.handleMarkPaid(parseInt(btn.dataset.id), false));
         
         // Eventos Caja
+        content.querySelectorAll('.delete-mov-btn').forEach(btn => {
+            btn.onclick = async () => {
+                if (confirm('¿Desea eliminar este movimiento de caja? Esta acción no se puede deshacer.')) {
+                    try {
+                        await apiClient.delete(`/caja/${btn.dataset.id}`);
+                        showSuccess('Movimiento eliminado correctamente');
+                        await this.loadData();
+                    } catch (error) {
+                        displayApiError(error);
+                    }
+                }
+            };
+        });
     }
 
     async handleMarkPaid(id, isPaid, isEdit = false) {

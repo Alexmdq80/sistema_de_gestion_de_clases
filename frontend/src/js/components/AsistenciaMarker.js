@@ -162,9 +162,27 @@ export class AsistenciaMarker {
     }
 
     renderPracticantesRows(canModify, isClosed) {
-        return this.practicantes.map(p => {
-            return `
-            <tr>
+        let html = '';
+        let hasInscriptos = this.practicantes.some(p => p.es_inscripto);
+
+        if (hasInscriptos) {
+            html += `<tr><td colspan="2" class="bg-light font-weight-bold py-2 text-primary"><i class="fas fa-calendar-check mr-2"></i> Alumnos Inscriptos en este Horario</td></tr>`;
+            const inscriptos = this.practicantes.filter(p => p.es_inscripto);
+            html += inscriptos.map(p => this.renderSingleRow(p, canModify, isClosed)).join('');
+            
+            html += `<tr><td colspan="2" class="bg-light font-weight-bold py-2 text-muted"><i class="fas fa-users mr-2"></i> Otros Alumnos</td></tr>`;
+            const otros = this.practicantes.filter(p => !p.es_inscripto);
+            html += otros.map(p => this.renderSingleRow(p, canModify, isClosed)).join('');
+        } else {
+            html += this.practicantes.map(p => this.renderSingleRow(p, canModify, isClosed)).join('');
+        }
+
+        return html;
+    }
+
+    renderSingleRow(p, canModify, isClosed) {
+        return `
+            <tr class="${p.es_inscripto ? 'table-primary-light' : ''}">
                 <td>
                     <div class="flex items-center justify-center" style="display: flex; align-items: center; justify-content: center; height: 100%;">
                         <input type="checkbox" class="attendance-checkbox" 
@@ -176,10 +194,13 @@ export class AsistenciaMarker {
                     </div>
                 </td>
                 <td>
-                    <strong>${p.nombre_completo}</strong>
+                    <div class="flex flex-col">
+                        <strong>${p.nombre_completo}</strong>
+                        <small class="text-muted">${p.abono_nombre} ${p.es_inscripto ? '<span class="badge badge-primary ml-1">Inscripto</span>' : ''}</small>
+                    </div>
                 </td>
             </tr>
-        `;}).join('');
+        `;
     }
 
     attachCheckboxEvents() {
@@ -228,11 +249,13 @@ export class AsistenciaMarker {
 
             // Toggle checkboxes and alert dynamically
             const checkboxes = this.container.querySelectorAll('.attendance-checkbox');
+            const isInactive = currentEstado === 'cancelada' || currentEstado === 'suspendida' || currentEstado === 'sin_actividad';
             const canModify = c.tipo === 'grupal' 
                 ? (currentEstado === 'realizada') 
                 : (currentEstado === 'programada' || currentEstado === 'realizada');
                 
             checkboxes.forEach(cb => {
+                if (isInactive) cb.checked = false;
                 cb.disabled = !canModify;
             });
             alertBox.style.display = canModify ? 'none' : 'block';

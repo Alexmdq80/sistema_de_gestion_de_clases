@@ -119,7 +119,8 @@ export class Asistencia {
             SELECT 
                 p.id, 
                 p.nombre_completo, 
-                IFNULL(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo') as abono_nombre
+                IFNULL(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo') as abono_nombre,
+                IF(ih.id IS NOT NULL, 1, 0) as es_inscripto
             FROM Practicante p
             LEFT JOIN Abono ab ON p.id = ab.practicante_id 
                 AND ab.estado = 'activo' 
@@ -127,11 +128,14 @@ export class Asistencia {
                 AND ab.fecha_inicio <= ?
                 AND ab.fecha_vencimiento >= ?
             LEFT JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
+            LEFT JOIN InscripcionHorario ih ON p.id = ih.practicante_id 
+                AND ih.horario_id = ? 
+                AND ih.activo = 1
             WHERE p.deleted_at IS NULL AND p.es_profesor = 0 AND p.activo = 1
-            GROUP BY p.id, p.nombre_completo
-            ORDER BY p.nombre_completo ASC
+            GROUP BY p.id, p.nombre_completo, ih.id
+            ORDER BY es_inscripto DESC, p.nombre_completo ASC
         `;
-        const [rows] = await pool.execute(sql, [fechaClase, fechaClase]);
+        const [rows] = await pool.execute(sql, [fechaClase, fechaClase, clase.horario_id || 0]);
         return rows;
     }
 

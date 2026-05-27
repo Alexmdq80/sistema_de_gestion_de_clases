@@ -82,8 +82,17 @@ router.put('/:id', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
     const id = parseInt(req.params.id, 10);
+    
+    // Check if the movement is already used
+    const movimiento = await MovimientoCaja.findById(id);
+    if (!movimiento) throw new AppError('Movimiento no encontrado', 404);
+
+    if (movimiento.usado_en_clase_id) {
+        throw new AppError('No se puede eliminar una Nota de Crédito que ya ha sido aplicada al pago de una clase. Primero debe anular el pago en la clase correspondiente.', 400);
+    }
+
     const deleted = await MovimientoCaja.delete(id);
-    if (!deleted) throw new AppError('Movimiento no encontrado', 404);
+    if (!deleted) throw new AppError('Error al intentar eliminar el movimiento', 500);
     res.json({ message: 'Movimiento eliminado con éxito', data: { id } });
 }));
 

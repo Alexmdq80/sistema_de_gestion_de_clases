@@ -112,6 +112,12 @@ export class PracticanteForm {
               >${practicante.direccion || ''}</textarea>
             </div>
 
+            <!-- Inscripción a Horarios -->
+            <h3 class="section-title mt-4 mb-2" style="border-bottom: 2px solid var(--border-color); padding-bottom: 0.5rem;">Inscripción a Horarios Semanales</h3>
+            <div id="horarios-inscripcion-container" class="card p-3 bg-light border">
+                <div class="loader text-center p-3">Cargando horarios disponibles...</div>
+            </div>
+
             <div class="form-group">
               <label for="condiciones_medicas">Condiciones Médicas</label>
               <textarea 
@@ -236,6 +242,7 @@ export class PracticanteForm {
     `;
 
     this.attachEvents();
+    this.loadHorarios();
   }
 
   attachEvents() {
@@ -357,6 +364,45 @@ export class PracticanteForm {
     return data;
   }
 
+  async loadHorarios() {
+    const container = this.container.querySelector('#horarios-inscripcion-container');
+    if (!container) return;
+    
+    try {
+        const [horariosRes, inscripcionesRes] = await Promise.all([
+            makeRequest('/horarios?activo=true', 'GET', null, true),
+            this.isEditing ? makeRequest(`/horarios/practicante/${this.options.practicante.id}`, 'GET', null, true) : { data: [] }
+        ]);
+        
+        const horarios = horariosRes.data;
+        const inscriptosIds = (inscripcionesRes.data || []).map(i => i.horario_id);
+        
+        if (horarios.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted py-3">No hay horarios semanales activos configurados.</div>';
+            return;
+        }
+
+        const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        
+        container.innerHTML = `
+            <div style="max-height: 300px; overflow-y: auto;">
+                ${horarios.map(h => `
+                    <div class="form-check p-2 border-bottom hover-bg-light" style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                        <input class="horario-checkbox" type="checkbox" value="${h.id}" id="h-${h.id}" ${inscriptosIds.includes(h.id) ? 'checked' : ''} style="width: 1.2rem; height: 1.2rem; margin-top: 0.2rem;">
+                        <label class="form-check-label" for="h-${h.id}" style="cursor: pointer; flex: 1;">
+                            <div class="font-weight-bold">${dias[h.dia_semana]} ${h.hora_inicio.substring(0,5)} - ${h.hora_fin.substring(0,5)}</div>
+                            <div class="small text-muted">${h.actividad_nombre} | ${h.lugar_nombre}</div>
+                        </label>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (error) {
+        container.innerHTML = '<div class="alert alert-danger">Error al cargar horarios</div>';
+        console.error(error);
+    }
+  }
+
   async submitForm() {
     const form = this.container.querySelector('#practicante-form');
     const submitBtn = form.querySelector('button[type="submit"]');
@@ -373,6 +419,14 @@ export class PracticanteForm {
       } else {
         result = await makeRequest('/practicantes', 'POST', data, true); // Use makeRequest
       }
+
+      const practicanteId = result.data.id;
+      
+      // Save Schedule inscriptions
+      const selectedHorarios = Array.from(this.container.querySelectorAll('.horario-checkbox:checked'))
+                                    .map(cb => parseInt(cb.value, 10));
+      
+      await makeRequest(`/horarios/practicante/${practicanteId}`, 'POST', { horarioIds: selectedHorarios }, true);
 
       submitBtn.disabled = false;
       submitBtn.textContent = this.isEditing ? 'Actualizar' : 'Guardar';

@@ -79,7 +79,10 @@ router.post('/clases/:id/practicantes', asyncHandler(async (req, res) => {
 
     // NEW RESTRICTION: Do not allow attendance in non-executable states
     if (['cancelada', 'suspendida', 'sin_actividad'].includes(clase.estado)) {
-        throw new AppError(`No se puede registrar asistencia en una clase con estado "${clase.estado}"`, 400);
+        const markingPresent = updates && Array.isArray(updates) && updates.some(u => u.asistio == 1 || u.asistio === true);
+        if (markingPresent) {
+            throw new AppError(`No se puede marcar asistencia (presentismo) en una clase con estado "${clase.estado}"`, 400);
+        }
     }
 
     if (updates && Array.isArray(updates)) {
@@ -307,7 +310,10 @@ router.post('/clases/:id/registrar', asyncHandler(async (req, res) => {
 
         // NEW RESTRICTION: Do not allow attendance in non-executable states
         if (['cancelada', 'suspendida', 'sin_actividad'].includes(targetEstado)) {
-            throw new AppError(`No se puede marcar asistencia si el estado de la clase es "${targetEstado}"`, 400);
+            const markingPresent = asistencias.some(a => a.asistio == 1 || a.asistio === true);
+            if (markingPresent) {
+                throw new AppError(`No se puede marcar asistencia (presentismo) si el estado de la clase es "${targetEstado}"`, 400);
+            }
         }
 
         if (clase.tipo === 'grupal') {
