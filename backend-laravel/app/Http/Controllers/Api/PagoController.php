@@ -19,7 +19,7 @@ class PagoController extends Controller
             $query->whereBetween('fecha', [$request->start_date, $request->end_date]);
         }
 
-        return response()->json($query->orderBy('fecha', 'desc')->get());
+        return response()->json(['data' => $query->orderBy('fecha', 'desc')->get()]);
     }
 
     public function store(StorePagoRequest $request)

@@ -26,7 +26,7 @@ class MovimientoCaja extends Model
     ];
 
     protected $casts = [
-        'monto' => 'decimal:2',
+        'monto' => 'float',
         'fecha' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

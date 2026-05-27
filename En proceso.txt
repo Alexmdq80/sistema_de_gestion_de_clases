@@ -1,0 +1,5 @@
+Migrando a Laravel...
+para usar Laravel, recordar modificar client.js
+//const API_BASE_URL = '/api/v2'; // Apuntando al nuevo backend de Laravel via Vite Proxy
+
+const API_BASE_URL = '/api'; // Apuntando al viejo backend de Node via Vite Proxy

@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\PagoSocioController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\CajaController;
 use App\Http\Controllers\Api\InformeController;
+use App\Http\Controllers\Api\PresupuestoController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -43,14 +44,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('tipos-abono', TipoAbonoController::class);
 
     // Horarios y Agenda
+    Route::get('horarios/practicante/{id}', [HorarioController::class, 'getByPracticante']);
+    Route::post('horarios/practicante/{id}', [HorarioController::class, 'updateByPracticante']);
     Route::apiResource('horarios', HorarioController::class);
     
     Route::prefix('asistencia')->group(function () {
-        Route::get('clases/generar', [ClaseController::class, 'generar']); // Placeholder
-        Route::get('clases/{clase}/practicantes', [ClaseController::class, 'practicantes']); // Placeholder
+        Route::get('practicante/{id}', [AsistenciaController::class, 'findByPracticante']);
+        Route::get('clases/generar', [ClaseController::class, 'generar']);
+        Route::get('clases/{clase}/practicantes', [ClaseController::class, 'practicantes']);
+        Route::post('clases/{clase}/practicantes', [ClaseController::class, 'updatePracticantes']);
         Route::apiResource('clases', ClaseController::class);
         Route::apiResource('asistencias', AsistenciaController::class);
     });
+
+    // Presupuestos
+    Route::apiResource('presupuestos', PresupuestoController::class);
 
     // Membresía y Socios
     Route::get('socios/candidates', [SocioController::class, 'candidates']);
@@ -63,7 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('pagos', PagoController::class);
     Route::apiResource('caja', CajaController::class);
     Route::get('/categorias-caja', function() {
-        return App\Models\CategoriaMovimiento::all();
+        return response()->json(['data' => App\Models\CategoriaMovimiento::all()]);
     });
 
     // Informes y Reportes

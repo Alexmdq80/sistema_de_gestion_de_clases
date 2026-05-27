@@ -69,4 +69,23 @@ class Practicante extends Model
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted()
+    {
+        static::saving(function ($practicante) {
+            if ($practicante->isDirty('activo')) {
+                if (!$practicante->activo) {
+                    $practicante->archivado_at = now();
+                } else {
+                    $practicante->archivado_at = null;
+                    if ($practicante->exists) {
+                        $practicante->reingreso_at = now();
+                    }
+                }
+            }
+        });
+    }
 }

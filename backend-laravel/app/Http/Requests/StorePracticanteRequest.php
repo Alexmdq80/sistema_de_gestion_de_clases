@@ -46,6 +46,7 @@ class StorePracticanteRequest extends FormRequest
             'observaciones_adicionales' => 'nullable|string',
             'es_profesor' => 'nullable|boolean',
             'user_id' => 'nullable|exists:User,id',
+            'activo' => 'nullable|boolean',
         ];
     }
 

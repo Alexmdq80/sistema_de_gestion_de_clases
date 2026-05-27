@@ -3,46 +3,45 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
-class PagoSocio extends Model
+class Presupuesto extends Model
 {
     use SoftDeletes;
 
-    protected $table = 'PagoSocio';
+    protected $table = 'Presupuesto';
 
     protected $fillable = [
-        'socio_id',
-        'monto',
-        'fecha_pago',
-        'mes_abono',
-        'fecha_vencimiento',
+        'practicante_id',
+        'cliente_nombre',
+        'fecha',
+        'total',
         'observaciones',
         'usuario_id',
-        'pagado_directo',
-        'estado_desconocido',
     ];
 
     protected $casts = [
-        'monto' => 'float',
         'fecha' => 'date',
-
-        'fecha_vencimiento' => 'date',
-        'pagado_directo' => 'boolean',
-        'estado_desconocido' => 'boolean',
+        'total' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
 
-    public function socio(): BelongsTo
+    public function practicante(): BelongsTo
     {
-        return $this->belongsTo(Socio::class, 'socio_id');
+        return $this->belongsTo(Practicante::class, 'practicante_id');
     }
 
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(User::class, 'usuario_id');
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(PresupuestoItem::class, 'presupuesto_id');
     }
 }

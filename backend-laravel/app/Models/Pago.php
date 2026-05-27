@@ -27,7 +27,7 @@ class Pago extends Model
 
     protected $casts = [
         'fecha' => 'date',
-        'monto' => 'decimal:2',
+        'monto' => 'float',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
