@@ -18,6 +18,7 @@ export class PracticanteList {
       onShowHistory: options.onShowHistory || (() => {}),
       onReceiveCuota: options.onReceiveCuota || (() => {}),
       onPayAbono: options.onPayAbono || (() => {}),
+      onShowHorarios: options.onShowHorarios || (() => {}),
       onLoad: options.onLoad || (() => {}),
       filterActivo: options.filterActivo, // New option for filtering active status
     };
@@ -263,6 +264,14 @@ export class PracticanteList {
                 >
                   Pagar Abono
                 </button>
+                <button 
+                  class="btn btn-outline-primary" 
+                  data-action="horarios" 
+                  data-id="${practicante.id}"
+                  style="margin-right: 0.5rem;"
+                >
+                  Horarios
+                </button>
                 ${practicante.socio_count > 0 ? `
                 <button 
                   class="btn btn-success" 
@@ -407,6 +416,9 @@ export class PracticanteList {
         break;
       case 'pay': // Handle the new 'pay' action
         this.options.onPayAbono(practicante);
+        break;
+      case 'horarios':
+        this.options.onShowHorarios(practicante);
         break;
       case 'cuota':
         this.options.onReceiveCuota(practicante);

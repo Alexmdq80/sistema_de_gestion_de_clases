@@ -595,15 +595,15 @@ export class SociosPage {
         try {
             if (this.view === 'list') {
                 const response = await apiClient.get('/socios', { search: this.searchQuery });
-                this.socios = response.data;
+                this.socios = response.data || [];
                 this.renderList(content);
             } else if (this.view === 'candidates') {
                 const response = await apiClient.get('/socios/candidates');
-                this.candidates = response.data;
+                this.candidates = response.data || [];
                 this.renderCandidates(content);
             } else if (this.view === 'payments') {
                 const response = await apiClient.get('/pagos-socios', { socio_id: this.selectedSocio.id });
-                this.payments = response.data;
+                this.payments = response.data || [];
                 this.renderPayments(content);
             }
 
@@ -611,8 +611,9 @@ export class SociosPage {
             const candRes = await apiClient.get('/socios/candidates');
             const badge = this.container.querySelector('#candidates-count');
             if (badge) {
-                badge.textContent = candRes.data.length;
-                badge.style.display = candRes.data.length > 0 ? 'inline' : 'none';
+                const count = (candRes.data || []).length;
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'inline' : 'none';
             }
         } catch (error) {
             displayApiError(error, content);
@@ -620,7 +621,7 @@ export class SociosPage {
     }
 
     renderList(content) {
-        if (this.socios.length === 0) {
+        if (!this.socios || this.socios.length === 0) {
             content.innerHTML = '<p class="text-center p-5 text-muted">No se encontraron socios registrados.</p>';
             return;
         }
@@ -638,8 +639,8 @@ export class SociosPage {
                 <tbody>
                     ${this.socios.map(s => `
                         <tr>
-                            <td><strong>${s.nombre_completo}</strong></td>
-                            <td>${s.lugar_nombre}</td>
+                            <td><strong>${s.nombre_completo || 'Sin nombre'}</strong></td>
+                            <td>${s.lugar_nombre || 'Sin lugar'}</td>
                             <td><span class="badge badge-info">${s.numero_socio || 'S/N'}</span></td>
                             <td>
                                 <button class="btn btn-sm btn-outline-info view-payments-btn" data-id="${s.id}"><i class="fas fa-history"></i> Historial</button>
@@ -699,7 +700,7 @@ export class SociosPage {
     }
 
     renderCandidates(content) {
-        if (this.candidates.length === 0) {
+        if (!this.candidates || this.candidates.length === 0) {
             content.innerHTML = '<p class="text-center p-5 text-muted">No hay candidatos pendientes.</p>';
             return;
         }
@@ -719,8 +720,8 @@ export class SociosPage {
                 <tbody>
                     ${this.candidates.map(c => `
                         <tr>
-                            <td><strong>${c.nombre_completo}</strong></td>
-                            <td>${c.real_lugar_nombre}</td>
+                            <td><strong>${c.nombre_completo || 'Sin nombre'}</strong></td>
+                            <td>${c.real_lugar_nombre || 'Sin lugar'}</td>
                             <td>
                                 <button class="btn btn-sm btn-success register-socio-btn" 
                                     data-practicante-id="${c.practicante_id}"
@@ -755,8 +756,8 @@ export class SociosPage {
                     <div class="text-right flex flex-col items-end gap-2" style="min-width: fit-content;">
                         <div class="card p-2 mb-0" style="background: #fff; border: 1px solid #ddd; display: inline-block; white-space: nowrap;">
                             <small class="text-muted d-block">Tarifas Establecidas:</small>
-                            <strong>General: $${parseFloat(this.selectedSocio.cuota_social_general).toFixed(2)}</strong> | 
-                            <strong>Bonificada: $${parseFloat(this.selectedSocio.cuota_social_descuento).toFixed(2)}</strong>
+                            <strong>General: $${parseFloat(this.selectedSocio.cuota_social_general || 0).toFixed(2)}</strong> | 
+                            <strong>Bonificada: $${parseFloat(this.selectedSocio.cuota_social_descuento || 0).toFixed(2)}</strong>
                         </div>
                         <button id="back-to-list" class="btn btn-sm btn-outline-secondary">Volver al listado</button>
                     </div>
@@ -777,8 +778,8 @@ export class SociosPage {
                         </tr>
                     </thead>
                     <tbody>
-                        ${this.payments.length === 0 ? '<tr><td colspan="7" class="text-center p-4 text-muted">No hay cuotas registradas.</td></tr>' : ''}
-                        ${this.payments.map(p => {
+                        ${(!this.payments || this.payments.length === 0) ? '<tr><td colspan="7" class="text-center p-4 text-muted">No hay cuotas registradas.</td></tr>' : ''}
+                        ${(this.payments || []).map(p => {
                             // Monto Recibido: from Pago model (monto_recibido_pago)
                             // If it's a teacher, we don't usually have a "Recibido" from them in incomes
                             const montoRecibido = !p.es_profesor && p.monto_recibido_pago ? '$' + parseFloat(p.monto_recibido_pago).toFixed(2) : '-';
@@ -914,12 +915,12 @@ export class SociosPage {
         const montoInput = this.container.querySelector('#pago-monto');
         
         // Default values for amounts
-        if (this.selectedSocio.cuota_social_descuento > 0) {
+        if (parseFloat(this.selectedSocio.cuota_social_descuento || 0) > 0) {
             tipoMontoSelect.value = 'descuento';
-            montoInput.value = this.selectedSocio.cuota_social_descuento;
+            montoInput.value = parseFloat(this.selectedSocio.cuota_social_descuento || 0).toFixed(2);
         } else {
             tipoMontoSelect.value = 'general';
-            montoInput.value = this.selectedSocio.cuota_social_general;
+            montoInput.value = parseFloat(this.selectedSocio.cuota_social_general || 0).toFixed(2);
         }
         montoInput.readOnly = true;
 

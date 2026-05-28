@@ -155,4 +155,57 @@ class InformeController extends Controller
 
         return response()->json(['data' => $query->orderByRaw('DAY(fecha_nacimiento)')->get()]);
     }
+
+    /**
+     * Reporte de inscripciones por horario.
+     */
+    public function inscripcionesHorarios(Request $request)
+    {
+        $lugar_id = $request->lugar_id;
+
+        $horarios = \App\Models\Horario::with(['actividad', 'lugar', 'profesor'])
+            ->where('activo', 1)
+            ->where('tipo', 'grupal')
+            ->when($lugar_id, function($q) use ($lugar_id) {
+                $q->where(function($sq) use ($lugar_id) {
+                    $sq->where('lugar_id', $lugar_id)
+                       ->orWhereHas('lugar', function($l) use ($lugar_id) {
+                           $l->where('parent_id', $lugar_id);
+                       });
+                });
+            })
+            ->orderBy('dia_semana')
+            ->orderBy('hora_inicio')
+            ->get();
+
+        $reportData = $horarios->map(function($h) {
+            $inscripciones = \App\Models\InscripcionHorario::where('horario_id', $h->id)
+                ->where('activo', 1)
+                ->whereNull('fecha_hasta')
+                ->whereNull('deleted_at')
+                ->with('practicante')
+                ->get();
+
+            return [
+                'id' => $h->id,
+                'dia_semana' => $h->dia_semana,
+                'hora_inicio' => $h->hora_inicio,
+                'hora_fin' => $h->hora_fin,
+                'tipo' => $h->tipo,
+                'actividad_nombre' => $h->actividad->nombre,
+                'lugar_nombre' => $h->lugar->nombre,
+                'profesor_nombre' => $h->profesor?->nombre_completo,
+                'practicantes' => $inscripciones->filter(function($i) {
+                    return $i->practicante && $i->practicante->activo && is_null($i->practicante->deleted_at);
+                })->map(function($i) {
+                    return [
+                        'id' => $i->practicante->id,
+                        'nombre' => $i->practicante->nombre_completo,
+                    ];
+                })->values()
+            ];
+        });
+
+        return response()->json(['data' => $reportData]);
+    }
 }

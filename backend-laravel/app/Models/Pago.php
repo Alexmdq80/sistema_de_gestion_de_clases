@@ -43,6 +43,16 @@ class Pago extends Model
         return $this->belongsTo(Lugar::class, 'lugar_id');
     }
 
+    public function abono(): BelongsTo
+    {
+        return $this->belongsTo(Abono::class, 'abono_id');
+    }
+
+    public function pagoSocio(): BelongsTo
+    {
+        return $this->belongsTo(PagoSocio::class, 'pago_socio_id');
+    }
+
     public function deuda(): BelongsTo
     {
         return $this->belongsTo(Deuda::class, 'deuda_id');

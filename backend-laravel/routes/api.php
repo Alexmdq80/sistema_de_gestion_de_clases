@@ -68,6 +68,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('pagos-socios', PagoSocioController::class);
 
     // Finanzas y Caja
+    Route::get('practicantes/{id}/pagos', [PagoController::class, 'getByPracticante']);
+    Route::get('pagos/abono/{id}/balance', [PagoController::class, 'abonoBalance']);
+    Route::post('pagos/partial', [PagoController::class, 'storePartial']);
+    Route::post('pagos/social-fee', [PagoController::class, 'storeSocialFee']);
     Route::apiResource('pagos', PagoController::class);
     Route::apiResource('caja', CajaController::class);
     Route::get('/categorias-caja', function() {
@@ -79,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/padron-socios-pagos', [InformeController::class, 'padronSocios']);
         Route::get('/balance-mensual', [InformeController::class, 'balanceMensual']);
         Route::get('/practicantes/cumpleanos', [InformeController::class, 'cumpleanos']);
+        Route::get('/inscripciones-horarios', [InformeController::class, 'inscripcionesHorarios']);
     });
     
     // Ejemplo de ruta para verificar el usuario actual

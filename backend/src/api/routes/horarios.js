@@ -41,7 +41,7 @@ router.post('/practicante/:id', asyncHandler(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     const { horarioIds } = req.body;
     
-    await InscripcionHorario.updateByPracticante(id, horarioIds);
+    await InscripcionHorario.updateByPracticante(id, horarioIds, req.user.userId);
     res.json({ message: 'Inscripciones actualizadas con éxito' });
 }));
 

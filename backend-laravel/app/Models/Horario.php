@@ -51,4 +51,12 @@ class Horario extends Model
     {
         return $this->hasMany(Clase::class, 'horario_id');
     }
+
+    /**
+     * Tipos de Abono que pueden asistir a este horario.
+     */
+    public function tiposAbono(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(TipoAbono::class, 'TipoAbono_Horario', 'horario_id', 'tipo_abono_id');
+    }
 }

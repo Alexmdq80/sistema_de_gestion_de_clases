@@ -33,6 +33,7 @@ export class InformesPage {
                             <option value="cuotas" ${this.currentReport === 'cuotas' ? 'selected' : ''}>Resumen Cuotas Pagadas</option>
                             <option value="padron" ${this.currentReport === 'padron' ? 'selected' : ''}>Padrón Detallado de Socios</option>
                             <option value="birthday" ${this.currentReport === 'birthday' ? 'selected' : ''}>Listado de Cumpleaños</option>
+                            <option value="inscripciones" ${this.currentReport === 'inscripciones' ? 'selected' : ''}>Inscripciones por Horario</option>
                             <option value="espacios" ${this.currentReport === 'espacios' ? 'selected' : ''}>Alquiler de Espacios</option>
                             <option value="consolidado" ${this.currentReport === 'consolidado' ? 'selected' : ''}>Liquidación Mensual (Cuotas + Alquiler)</option>
                         </select>
@@ -126,6 +127,11 @@ export class InformesPage {
                 basisContainer.style.display = ['balance', 'espacios', 'consolidado'].includes(this.currentReport) ? 'block' : 'none';
             }
 
+            // Ocultar mes/año para informes que no lo necesitan
+            const timeFilters = this.container.querySelectorAll('#report-month, #report-year');
+            const displayTime = this.currentReport !== 'inscripciones';
+            timeFilters.forEach(el => el.style.display = displayTime ? 'block' : 'none');
+
             const bdayOptions = this.container.querySelector('#birthday-options-container');
             if (bdayOptions) {
                 bdayOptions.style.display = this.currentReport === 'birthday' ? 'block' : 'none';
@@ -211,6 +217,11 @@ export class InformesPage {
                 endpoint = '/informes/padron-socios-pagos';
             } else if (this.currentReport === 'birthday') {
                 endpoint = '/informes/practicantes/cumpleanos';
+            } else if (this.currentReport === 'inscripciones') {
+                endpoint = '/informes/inscripciones-horarios';
+                delete params.mes;
+                delete params.anio;
+                delete params.criterio;
             } else if (this.currentReport === 'consolidado') {
                 if (!this.selectedLugarId) {
                     content.innerHTML = '<div class="alert alert-warning">Debe seleccionar una Sede específica para el informe consolidado.</div>';
@@ -472,6 +483,8 @@ export class InformesPage {
             this.renderPadronReport(content);
         } else if (this.currentReport === 'birthday') {
             this.renderBirthdayReport(content);
+        } else if (this.currentReport === 'inscripciones') {
+            this.renderInscripcionesReport(content);
         } else if (this.currentReport === 'consolidado') {
             this.renderConsolidadoReport(content);
         } else {
@@ -780,6 +793,65 @@ export class InformesPage {
                 <div class="mt-4 flex justify-between small text-muted no-print">
                     <span id="padron-total-display">Total de registros: ${this.data.length}</span>
                 </div>
+                ${this.renderReportFooter()}
+            </div>
+        `;
+    }
+
+    renderInscripcionesReport(content) {
+        const isSedeFiltered = this.selectedLugarId !== '';
+        const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
+        const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+        content.innerHTML = `
+            <div class="report-paper p-4 bg-white border">
+                ${this.renderReportHeader('Informe de Inscripciones por Horario', `Estado actual al ${new Date().toLocaleDateString('es-ES')} - ${sedeNombre}`)}
+
+                <div class="report-body">
+                    ${this.data.map(h => `
+                        <div class="horario-group mb-4" style="page-break-inside: avoid; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+                            <div class="horario-header p-2 bg-light d-flex justify-between align-items-center" style="border-bottom: 2px solid #ddd;">
+                                <div>
+                                    <strong style="font-size: 1.1rem; color: var(--primary-color);">${dias[h.dia_semana]} ${h.hora_inicio.substring(0,5)} - ${h.hora_fin.substring(0,5)}</strong>
+                                    <span class="ml-2 badge badge-info">${h.actividad_nombre}</span>
+                                    <span class="ml-2 text-muted small">| ${h.lugar_nombre}</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="small font-weight-bold">Profesor: ${h.profesor_nombre || 'No asignado'}</span>
+                                    <span class="ml-3 badge badge-pill badge-secondary">${h.practicantes.length} Alumnos</span>
+                                </div>
+                            </div>
+                            <div class="horario-body p-0">
+                                ${h.practicantes.length > 0 ? `
+                                    <table class="table table-sm mb-0">
+                                        <thead class="thead-light">
+                                            <tr>
+                                                <th style="width: 50px; text-align: center;">#</th>
+                                                <th>Nombre del Alumno</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${h.practicantes.map((p, idx) => `
+                                                <tr>
+                                                    <td class="text-center text-muted">${idx + 1}</td>
+                                                    <td><strong>${p.nombre}</strong></td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                ` : `
+                                    <div class="p-3 text-center text-muted italic">Sin alumnos inscritos actualmente</div>
+                                `}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="mt-4 flex justify-between small text-muted">
+                    <span>Total de Horarios: ${this.data.length}</span>
+                    <span>Total de Inscripciones: ${this.data.reduce((acc, h) => acc + h.practicantes.length, 0)}</span>
+                </div>
+                
                 ${this.renderReportFooter()}
             </div>
         `;

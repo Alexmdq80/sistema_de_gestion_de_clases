@@ -48,6 +48,14 @@ class Clase extends Model
         return $this->belongsTo(Horario::class, 'horario_id');
     }
 
+    /**
+     * En clases particulares/flexibles, el horario_id puede apuntar directamente a un Abono.
+     */
+    public function abono(): BelongsTo
+    {
+        return $this->belongsTo(Abono::class, 'horario_id');
+    }
+
     public function actividad(): BelongsTo
     {
         return $this->belongsTo(Actividad::class, 'actividad_id');

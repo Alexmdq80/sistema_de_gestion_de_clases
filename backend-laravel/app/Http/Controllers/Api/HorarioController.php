@@ -50,7 +50,7 @@ class HorarioController extends Controller
             'hora_inicio' => 'required',
             'hora_fin' => 'required',
             'tipo' => 'required|string',
-            'profesor_id' => 'nullable|exists:User,id',
+            'profesor_id' => 'nullable|exists:Practicante,id',
             'activo' => 'boolean'
         ]);
 
@@ -86,7 +86,7 @@ class HorarioController extends Controller
             'hora_inicio' => 'sometimes|required',
             'hora_fin' => 'sometimes|required',
             'tipo' => 'sometimes|required|string',
-            'profesor_id' => 'nullable|exists:User,id',
+            'profesor_id' => 'nullable|exists:Practicante,id',
             'activo' => 'boolean'
         ]);
 
@@ -113,9 +113,9 @@ class HorarioController extends Controller
      */
     public function getByPracticante($id)
     {
-        $inscripciones = InscripcionHorario::with(['horario.actividad', 'horario.lugar'])
+        $inscripciones = InscripcionHorario::activa()
+            ->with(['horario.actividad', 'horario.lugar'])
             ->where('practicante_id', $id)
-            ->where('activo', true)
             ->get();
 
         return response()->json([
@@ -124,11 +124,12 @@ class HorarioController extends Controller
                     'id' => $ih->id,
                     'practicante_id' => $ih->practicante_id,
                     'horario_id' => $ih->horario_id,
-                    'fecha_inscripcion' => $ih->fecha_inscripcion,
+                    'fecha_inscripcion' => $ih->fecha_desde,
                     'activo' => $ih->activo,
                     'dia_semana' => $ih->horario->dia_semana,
                     'hora_inicio' => $ih->horario->hora_inicio,
                     'hora_fin' => $ih->horario->hora_fin,
+                    'horario_tipo' => $ih->horario->tipo,
                     'actividad_nombre' => $ih->horario->actividad->nombre,
                     'lugar_nombre' => $ih->horario->lugar->nombre,
                 ];
@@ -150,17 +151,33 @@ class HorarioController extends Controller
 
         try {
             DB::transaction(function() use ($id, $horarioIds) {
-                // Eliminar inscripciones actuales (o marcarlas inactivas)
-                // Para consistencia con Node: DELETE
-                InscripcionHorario::where('practicante_id', $id)->delete();
-
-                // Insertar nuevas
                 $today = now()->toDateString();
-                foreach ($horarioIds as $hId) {
+                
+                // 1. Obtener inscripciones actuales activas
+                $currentInscriptions = InscripcionHorario::where('practicante_id', $id)
+                    ->where('activo', true)
+                    ->whereNull('fecha_hasta')
+                    ->get();
+                
+                $currentHorarioIds = $currentInscriptions->pluck('horario_id')->toArray();
+
+                // 2. Identificar eliminadas -> Finalizar vigencia
+                $toEnd = $currentInscriptions->filter(fn($i) => !in_array($i->horario_id, $horarioIds));
+                foreach ($toEnd as $inscription) {
+                    $inscription->update([
+                        'activo' => false,
+                        'fecha_hasta' => $today
+                    ]);
+                    // Nota: Para auditoría en Laravel, usualmente se usaría un Observer o Spatie ActivityLog
+                }
+
+                // 3. Identificar nuevas -> Crear entrada
+                $toAdd = array_diff($horarioIds, $currentHorarioIds);
+                foreach ($toAdd as $hId) {
                     InscripcionHorario::create([
                         'practicante_id' => $id,
                         'horario_id' => $hId,
-                        'fecha_inscripcion' => $today,
+                        'fecha_desde' => $today,
                         'activo' => true
                     ]);
                 }

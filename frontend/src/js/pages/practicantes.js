@@ -7,6 +7,7 @@ import PracticanteForm from '../components/PracticanteForm.js';
 import PracticanteList from '../components/PracticanteList.js';
 import PracticanteDetail from '../components/PracticanteDetail.js';
 import PracticanteHistory from '../components/PracticanteHistory.js';
+import InscripcionHorarioModal from '../components/InscripcionHorarioModal.js';
 import { showSuccess, displayApiError } from '../utils/errors.js'; // Import displayApiError for error handling
 import { practicanteApi } from '../api/client.js'; // Import practicanteApi to fetch individual practicante
 
@@ -150,6 +151,10 @@ export class PracticantesPage {
             },
             onShowHistory: (practicante) => {
                 this.showHistory(practicante);
+            },
+            onShowHorarios: (practicante) => {
+                const modal = new InscripcionHorarioModal(this.container);
+                modal.render(practicante);
             }
         });
 

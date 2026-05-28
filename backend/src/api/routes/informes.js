@@ -384,4 +384,73 @@ router.get('/practicantes/cumpleanos', asyncHandler(async (req, res) => {
     res.json({ data: rows });
 }));
 
+/**
+ * GET /api/informes/inscripciones-horarios
+ * Reporte de practicantes inscritos por cada horario semanal
+ */
+router.get('/inscripciones-horarios', asyncHandler(async (req, res) => {
+    const { lugar_id } = req.query;
+    
+    let sql = `
+        SELECT 
+            h.id as horario_id,
+            h.dia_semana,
+            h.hora_inicio,
+            h.hora_fin,
+            h.tipo as horario_tipo,
+            a.nombre as actividad_nombre,
+            l.nombre as lugar_nombre,
+            prof.nombre_completo as profesor_nombre,
+            pr.id as practicante_id,
+            pr.nombre_completo as practicante_nombre
+        FROM Horario h
+        JOIN Actividad a ON h.actividad_id = a.id
+        JOIN Lugar l ON h.lugar_id = l.id
+        LEFT JOIN Practicante prof ON h.profesor_id = prof.id
+        LEFT JOIN InscripcionHorario ih ON h.id = ih.horario_id AND ih.activo = 1 AND ih.fecha_hasta IS NULL AND ih.deleted_at IS NULL
+        LEFT JOIN Practicante pr ON ih.practicante_id = pr.id AND pr.deleted_at IS NULL AND pr.activo = 1
+        WHERE h.deleted_at IS NULL AND h.activo = 1 AND h.tipo = 'grupal'
+    `;
+    const params = [];
+
+    if (lugar_id) {
+        sql += ' AND (l.id = ? OR l.parent_id = ?)';
+        params.push(lugar_id, lugar_id);
+    }
+
+    sql += ' ORDER BY h.dia_semana, h.hora_inicio, pr.nombre_completo';
+
+    const [rows] = await pool.execute(sql, params);
+
+    // Grouping by schedule in JS to make it easier for the frontend
+    const reportData = [];
+    const schedulesMap = new Map();
+
+    rows.forEach(row => {
+        if (!schedulesMap.has(row.horario_id)) {
+            schedulesMap.set(row.horario_id, {
+                id: row.horario_id,
+                dia_semana: row.dia_semana,
+                hora_inicio: row.hora_inicio,
+                hora_fin: row.hora_fin,
+                tipo: row.horario_tipo,
+                actividad_nombre: row.actividad_nombre,
+                lugar_nombre: row.lugar_nombre,
+                profesor_nombre: row.profesor_nombre,
+                practicantes: []
+            });
+            reportData.push(schedulesMap.get(row.horario_id));
+        }
+
+        if (row.practicante_id) {
+            schedulesMap.get(row.horario_id).practicantes.push({
+                id: row.practicante_id,
+                nombre: row.practicante_nombre
+            });
+        }
+    });
+
+    res.json({ data: reportData });
+}));
+
 export default router;

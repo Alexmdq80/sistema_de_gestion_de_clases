@@ -19,8 +19,10 @@ class StorePracticanteRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isUpdate = $this->isMethod('PUT') || $this->isMethod('PATCH');
+
         return [
-            'nombre_completo' => 'required|string|max:255',
+            'nombre_completo' => ($isUpdate ? 'sometimes|' : '') . 'required|string|max:255',
             'dni' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'telefono' => 'nullable|string|max:20',
