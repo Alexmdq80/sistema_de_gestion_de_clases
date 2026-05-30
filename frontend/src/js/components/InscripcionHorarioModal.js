@@ -14,13 +14,15 @@ export class InscripcionHorarioModal {
             onSuccess: options.onSuccess || (() => {})
         };
         this.practicante = null;
+        this.allHorarios = [];
+        this.inscriptosIds = [];
     }
 
     render(practicante) {
         this.practicante = practicante;
         
         // Remove existing modal if any
-        const existingModal = document.getElementById('horarios-modal');
+        const existingModal = document.getElementById('horarios-modal-container');
         if (existingModal) {
             existingModal.remove();
         }
@@ -34,7 +36,19 @@ export class InscripcionHorarioModal {
                     </div>
                     
                     <div class="modal-body">
-                        <p class="text-muted mb-4">Seleccione los horarios semanales a los que asiste el alumno habitualmente.</p>
+                        <p class="text-muted mb-2">Seleccione los horarios semanales a los que asiste el alumno habitualmente.</p>
+                        
+                        <!-- Filtros de Tipo -->
+                        <div class="filters-container mb-3 p-2 bg-white border rounded flex gap-4 items-center" style="font-size: 0.9rem;">
+                            <span class="font-weight-bold">Filtrar por:</span>
+                            <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
+                                <input type="checkbox" id="filter-grupal" checked> Grupales
+                            </label>
+                            <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
+                                <input type="checkbox" id="filter-flexible" checked> Particulares/Compartidas
+                            </label>
+                        </div>
+
                         <div id="horarios-inscripcion-list" class="card p-3 bg-light border">
                             <div class="loader text-center p-3">Cargando horarios disponibles...</div>
                         </div>
@@ -90,6 +104,8 @@ export class InscripcionHorarioModal {
         const closeBtn = modalDiv.querySelector('#close-horarios-modal');
         const cancelBtn = modalDiv.querySelector('#cancel-horarios-btn');
         const saveBtn = modalDiv.querySelector('#save-horarios-btn');
+        const filterGrupal = modalDiv.querySelector('#filter-grupal');
+        const filterFlexible = modalDiv.querySelector('#filter-flexible');
 
         const closeModal = () => {
             modalDiv.remove();
@@ -102,6 +118,14 @@ export class InscripcionHorarioModal {
         saveBtn.addEventListener('click', async () => {
             await this.saveInscriptions(modalDiv);
         });
+
+        // Eventos de Filtrado
+        const handleFilterChange = () => {
+            this.renderFilteredList(modalDiv);
+        };
+
+        filterGrupal.addEventListener('change', handleFilterChange);
+        filterFlexible.addEventListener('change', handleFilterChange);
 
         // Close when clicking outside
         window.onclick = (event) => {
@@ -116,43 +140,69 @@ export class InscripcionHorarioModal {
         
         try {
             const [horariosRes, inscripcionesRes] = await Promise.all([
-                makeRequest('/horarios?activo=true&tipo=grupal', 'GET', null, true),
+                makeRequest('/horarios?activo=true', 'GET', null, true),
                 makeRequest(`/horarios/practicante/${this.practicante.id}`, 'GET', null, true)
             ]);
             
-            const horarios = horariosRes.data;
-            const inscriptosIds = (inscripcionesRes.data || []).map(i => i.horario_id);
+            this.allHorarios = horariosRes.data;
+            this.inscriptosIds = (inscripcionesRes.data || []).map(i => i.horario_id);
             
-            if (horarios.length === 0) {
-                listContainer.innerHTML = '<div class="text-center text-muted py-3">No hay horarios semanales activos configurados.</div>';
-                return;
-            }
-
-            const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-            
-            listContainer.innerHTML = `
-                <div style="max-height: 400px; overflow-y: auto;">
-                    ${horarios.map(h => `
-                        <div class="form-check p-2 border-bottom hover-bg-light" style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                            <input class="horario-checkbox" type="checkbox" value="${h.id}" id="h-${h.id}" ${inscriptosIds.includes(h.id) ? 'checked' : ''} style="width: 1.25rem; height: 1.25rem; margin-top: 0.2rem; cursor: pointer;">
-                            <label class="form-check-label" for="h-${h.id}" style="cursor: pointer; flex: 1;">
-                                <div style="font-weight: 600;">
-                                    ${dias[h.dia_semana]} ${h.hora_inicio.substring(0,5)} - ${h.hora_fin.substring(0,5)}
-                                    <span class="badge ${h.tipo === 'grupal' ? 'badge-info' : 'badge-warning'}" style="font-size: 0.7rem; margin-left: 0.5rem; vertical-align: middle;">
-                                        ${h.tipo.charAt(0).toUpperCase() + h.tipo.slice(1)}
-                                    </span>
-                                </div>
-                                <div class="small text-muted">${this.escapeHtml(h.actividad_nombre)} | ${this.escapeHtml(h.lugar_nombre)}</div>
-                                <div class="small text-muted">Profesor: ${this.escapeHtml(h.profesor_nombre || 'No asignado')}</div>
-                            </label>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
+            this.renderFilteredList(modalDiv);
         } catch (error) {
             listContainer.innerHTML = '<div class="alert alert-danger">Error al cargar horarios</div>';
             console.error(error);
         }
+    }
+
+    renderFilteredList(modalDiv) {
+        const listContainer = modalDiv.querySelector('#horarios-inscripcion-list');
+        const showGrupal = modalDiv.querySelector('#filter-grupal').checked;
+        const showFlexible = modalDiv.querySelector('#filter-flexible').checked;
+
+        const filtered = this.allHorarios.filter(h => {
+            if (h.tipo === 'grupal') return showGrupal;
+            if (h.tipo === 'flexible' || h.tipo === 'particular' || h.tipo === 'compartida') return showFlexible;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            listContainer.innerHTML = '<div class="text-center text-muted py-3">No hay horarios que coincidan con los filtros.</div>';
+            return;
+        }
+
+        const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        
+        listContainer.innerHTML = `
+            <div style="max-height: 400px; overflow-y: auto;">
+                ${filtered.map(h => `
+                    <div class="form-check p-2 border-bottom hover-bg-light" style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                        <input class="horario-checkbox" type="checkbox" value="${h.id}" id="h-${h.id}" ${this.inscriptosIds.includes(h.id) ? 'checked' : ''} style="width: 1.25rem; height: 1.25rem; margin-top: 0.2rem; cursor: pointer;">
+                        <label class="form-check-label" for="h-${h.id}" style="cursor: pointer; flex: 1;">
+                            <div style="font-weight: 600;">
+                                ${dias[h.dia_semana]} ${h.hora_inicio.substring(0,5)} - ${h.hora_fin.substring(0,5)}
+                                <span class="badge ${h.tipo === 'grupal' ? 'badge-info' : 'badge-warning'}" style="font-size: 0.7rem; margin-left: 0.5rem; vertical-align: middle;">
+                                    ${h.tipo.charAt(0).toUpperCase() + h.tipo.slice(1)}
+                                </span>
+                            </div>
+                            <div class="small text-muted">${this.escapeHtml(h.actividad_nombre)} | ${this.escapeHtml(h.lugar_nombre)}</div>
+                            <div class="small text-muted">Profesor: ${this.escapeHtml(h.profesor_nombre || 'No asignado')}</div>
+                        </label>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        // Mantener actualizados los IDs seleccionados cuando el usuario hace clic
+        modalDiv.querySelectorAll('.horario-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const id = parseInt(e.target.value, 10);
+                if (e.target.checked) {
+                    if (!this.inscriptosIds.includes(id)) this.inscriptosIds.push(id);
+                } else {
+                    this.inscriptosIds = this.inscriptosIds.filter(iid => iid !== id);
+                }
+            });
+        });
     }
 
     async saveInscriptions(modalDiv) {
@@ -163,10 +213,7 @@ export class InscripcionHorarioModal {
             saveBtn.disabled = true;
             saveBtn.textContent = 'Guardando...';
 
-            const selectedHorarios = Array.from(modalDiv.querySelectorAll('.horario-checkbox:checked'))
-                                          .map(cb => parseInt(cb.value, 10));
-            
-            await makeRequest(`/horarios/practicante/${this.practicante.id}`, 'POST', { horarioIds: selectedHorarios }, true);
+            await makeRequest(`/horarios/practicante/${this.practicante.id}`, 'POST', { horarioIds: this.inscriptosIds }, true);
 
             showSuccess('Horarios actualizados correctamente', document.body);
             modalDiv.remove();

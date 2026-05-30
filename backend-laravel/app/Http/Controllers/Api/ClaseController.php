@@ -27,26 +27,38 @@ class ClaseController extends Controller
     {
         $query = Clase::with(['actividad', 'lugar', 'profesor', 'horario']);
 
-        // Filtro por rango de fechas (soporta ambos formatos)
+        // Filtro por rango de fechas
         $fechaInicio = $request->get('fecha_inicio') ?: $request->get('start_date');
         $fechaFin = $request->get('fecha_fin') ?: $request->get('end_date');
 
         if ($fechaInicio && $fechaFin) {
-            $query->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+            if ($request->get('include_paid_in_range') === 'true') {
+                // Return class where the movement date (payment_date OR session_date) is in range
+                $query->where(function($q) use ($fechaInicio, $fechaFin) {
+                    $q->whereBetween(DB::raw('COALESCE(fecha_pago_espacio, fecha)'), [$fechaInicio, $fechaFin]);
+                });
+            } else {
+                $query->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+            }
         } elseif ($request->has('fecha')) {
             $query->where('fecha', $request->fecha);
         }
 
         // Filtro por lugar o actividad
-        if ($request->has('lugar_id')) {
-            $query->where('lugar_id', $request->lugar_id);
+        $lugarId = $request->get('lugar_id');
+        if ($lugarId && $lugarId !== 'all') {
+            $query->where(function($q) use ($lugarId) {
+                $q->where('lugar_id', $lugarId)
+                  ->orWhereHas('lugar', fn($sq) => $sq->where('parent_id', $lugarId));
+            });
         }
+
         if ($request->has('actividad_id')) {
             $query->where('actividad_id', $request->actividad_id);
         }
 
         return response()->json([
-            'data' => $query->orderBy('fecha', 'desc')->orderBy('hora', 'asc')->get()
+            'data' => $query->orderBy('fecha', 'asc')->orderBy('hora', 'asc')->get()
         ]);
     }
 
@@ -192,6 +204,16 @@ class ClaseController extends Controller
                 }
 
                 $clase->update($data);
+
+                // Registrar Historial
+                HistorialClase::create([
+                    'clase_id' => $clase->id,
+                    'accion' => 'UPDATE',
+                    'datos_anteriores' => $oldClaseData,
+                    'datos_nuevos' => $clase->fresh()->toArray(),
+                    'usuario_id' => $userId
+                ]);
+
                 return response()->json([
                     'message' => 'Clase actualizada', 
                     'data' => $clase
@@ -206,8 +228,22 @@ class ClaseController extends Controller
     {
         $clase = Clase::find($id);
         if (!$clase) return response()->json(['error' => 'Clase no encontrada'], 404);
-        $clase->delete();
-        return response()->json(['message' => 'Clase eliminada']);
+        
+        return DB::transaction(function () use ($clase) {
+            $oldData = $clase->toArray();
+            $clase->delete();
+
+            // Registrar Historial
+            HistorialClase::create([
+                'clase_id' => $clase->id,
+                'accion' => 'DELETE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => null,
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json(['message' => 'Clase eliminada']);
+        });
     }
 
     public function generar(Request $request)

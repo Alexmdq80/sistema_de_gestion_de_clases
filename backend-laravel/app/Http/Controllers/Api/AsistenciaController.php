@@ -31,10 +31,22 @@ class AsistenciaController extends Controller
                 $join->on('Clase.id', '=', 'Asistencia.clase_id')
                      ->where('Asistencia.practicante_id', '=', $id);
             })
-            ->select('Clase.*', 'Asistencia.id as asistencia_id', DB::raw('IF(Asistencia.id IS NOT NULL, 1, 0) as ya_anotado'))
+            // Agregamos un check para ver si está inscripto en el horario de la clase
+            ->leftJoin('InscripcionHorario', function($join) use ($id) {
+                $join->on('Clase.horario_id', '=', 'InscripcionHorario.horario_id')
+                     ->where('InscripcionHorario.practicante_id', '=', $id)
+                     ->where('InscripcionHorario.activo', '=', 1);
+            })
+            ->select(
+                'Clase.*', 
+                'Asistencia.id as asistencia_id', 
+                'Asistencia.asistio',
+                DB::raw('IF(Asistencia.id IS NOT NULL OR InscripcionHorario.id IS NOT NULL, 1, 0) as ya_anotado')
+            )
             ->whereNull('Clase.deleted_at')
             ->where(function($q) {
                 $q->whereNotNull('Asistencia.id')
+                  ->orWhereNotNull('InscripcionHorario.id')
                   ->orWhere(function($sq) {
                       $sq->where('Clase.tipo', 'flexible')
                          ->where('Clase.estado', 'programada');
@@ -51,7 +63,11 @@ class AsistenciaController extends Controller
             $query->where('Clase.tipo', $request->tipo);
         }
 
-        $results = $query->orderBy('Clase.fecha', 'desc')
+        // Importante: Si filtramos por InscripcionHorario, pueden salir duplicados si hay varias 
+        // inscripciones (históricas vs actuales), pero el WHERE activo=1 y el LEFT JOIN deberían limitarlo.
+        // Agrupamos por ID de clase para estar seguros.
+        $results = $query->groupBy('Clase.id')
+                        ->orderBy('Clase.fecha', 'desc')
                         ->orderBy('Clase.hora', 'desc')
                         ->get();
 

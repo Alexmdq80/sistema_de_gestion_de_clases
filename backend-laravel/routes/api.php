@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\SocioController;
 use App\Http\Controllers\Api\PagoSocioController;
 use App\Http\Controllers\Api\PagoController;
 use App\Http\Controllers\Api\CajaController;
+use App\Http\Controllers\Api\DeudaController;
 use App\Http\Controllers\Api\InformeController;
 use App\Http\Controllers\Api\PresupuestoController;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Route;
 
 // Rutas de Autenticación V2
 Route::prefix('auth')->group(function () {
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 });
 
@@ -47,7 +48,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('horarios/practicante/{id}', [HorarioController::class, 'getByPracticante']);
     Route::post('horarios/practicante/{id}', [HorarioController::class, 'updateByPracticante']);
     Route::apiResource('horarios', HorarioController::class);
-    
+
     Route::prefix('asistencia')->group(function () {
         Route::get('practicante/{id}', [AsistenciaController::class, 'findByPracticante']);
         Route::get('clases/generar', [ClaseController::class, 'generar']);
@@ -69,11 +70,20 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Finanzas y Caja
     Route::get('practicantes/{id}/pagos', [PagoController::class, 'getByPracticante']);
+    Route::post('practicantes/{id}/pagar', [PagoController::class, 'storePracticantePago']);
+    Route::delete('practicantes/{id}/pagos/{pagoId}', [PagoController::class, 'destroyFromPracticante']);
     Route::get('pagos/abono/{id}/balance', [PagoController::class, 'abonoBalance']);
     Route::post('pagos/partial', [PagoController::class, 'storePartial']);
     Route::post('pagos/social-fee', [PagoController::class, 'storeSocialFee']);
     Route::apiResource('pagos', PagoController::class);
+    Route::get('caja/notas-credito/{lugarId}', [CajaController::class, 'notasCreditoDisponibles']);
     Route::apiResource('caja', CajaController::class);
+
+    // Deudas
+    Route::put('deudas/{id}/pagar', [DeudaController::class, 'pagar']);
+    Route::put('deudas/{id}/cancelar', [DeudaController::class, 'cancelar']);
+    Route::apiResource('deudas', DeudaController::class);
+
     Route::get('/categorias-caja', function() {
         return response()->json(['data' => App\Models\CategoriaMovimiento::all()]);
     });

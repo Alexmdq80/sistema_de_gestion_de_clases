@@ -36,6 +36,17 @@ class TipoAbono extends Model
         'deleted_at' => 'datetime',
     ];
 
+    protected $appends = ['lugar_nombre'];
+
+    public function getLugarNombreAttribute(): string
+    {
+        if ($this->lugar_id && $this->lugar) {
+            return $this->lugar->nombre;
+        }
+
+        return $this->horarios->pluck('lugar.nombre')->unique()->filter()->implode(', ') ?: '';
+    }
+
     /**
      * Relación con el Lugar donde se dicta este abono.
      */

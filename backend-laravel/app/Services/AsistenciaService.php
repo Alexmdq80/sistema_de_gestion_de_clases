@@ -89,24 +89,33 @@ class AsistenciaService
         $fechaClase = $clase->fecha->toDateString();
         $horarioId = $clase->horario_id ?: 0;
 
+        // Usamos subconsultas para evitar los problemas de duplicación por GROUP BY 
+        // cuando un alumno tiene múltiples abonos activos o inscripciones.
         $sql = "
             SELECT 
                 p.id, 
-                p.nombre_completo, 
-                COALESCE(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo') as abono_nombre,
-                IF(ih.id IS NOT NULL, 1, 0) as es_inscripto
+                p.nombre_completo,
+                (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo')
+                    FROM Abono ab
+                    JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
+                    WHERE ab.practicante_id = p.id 
+                        AND ab.estado = 'activo' 
+                        AND ab.deleted_at IS NULL
+                        AND ab.fecha_inicio <= ?
+                        AND ab.fecha_vencimiento >= ?
+                ) as abono_nombre,
+                (
+                    SELECT IF(COUNT(*) > 0, 1, 0)
+                    FROM InscripcionHorario ih
+                    WHERE ih.practicante_id = p.id 
+                        AND ih.horario_id = ? 
+                        AND ih.activo = 1
+                ) as es_inscripto
             FROM Practicante p
-            LEFT JOIN Abono ab ON p.id = ab.practicante_id 
-                AND ab.estado = 'activo' 
-                AND ab.deleted_at IS NULL
-                AND ab.fecha_inicio <= ?
-                AND ab.fecha_vencimiento >= ?
-            LEFT JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
-            LEFT JOIN InscripcionHorario ih ON p.id = ih.practicante_id 
-                AND ih.horario_id = ? 
-                AND ih.activo = 1
-            WHERE p.deleted_at IS NULL AND p.es_profesor = 0 AND p.activo = 1
-            GROUP BY p.id, p.nombre_completo, ih.id
+            WHERE p.deleted_at IS NULL 
+                AND p.es_profesor = 0 
+                AND p.activo = 1
             ORDER BY es_inscripto DESC, p.nombre_completo ASC
         ";
 

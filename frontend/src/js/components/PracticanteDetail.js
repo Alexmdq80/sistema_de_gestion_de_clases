@@ -873,13 +873,17 @@ export class PracticanteDetail {
     const notas = notasTextarea.value;
     const monto = montoInput.value;
 
-    errorMessageElement.style.display = 'none';
+    if (errorMessageElement) {
+        errorMessageElement.style.display = 'none';
+    }
 
     try {
         const selectedOption = tipoAbonoSelect.options[tipoAbonoSelect.selectedIndex];
         if (!selectedOption || !tipoAbonoSelect.value) {
-            errorMessageElement.textContent = 'Por favor, seleccione un tipo de abono.';
-            errorMessageElement.style.display = 'block';
+            if (errorMessageElement) {
+                errorMessageElement.textContent = 'Por favor, seleccione un tipo de abono.';
+                errorMessageElement.style.display = 'block';
+            }
             return;
         }
 
@@ -889,13 +893,15 @@ export class PracticanteDetail {
         const tipo_abono_id = tipoAbonoSelect.value;
         const cantidad = cantidadInput.value;
         const mes_abono = mesAbonoSelect.value;
-        const fecha_vencimiento = fechaVencimientoInput.value;
+        const fecha_vencimiento = fechaVencimientoInput ? fechaVencimientoInput.value : null; // Use safe access
         const lugar_id = lugarSelect.value;
 
         // Validation: lugar_id is required for flexible classes
         if (isFlexible && !lugar_id) {
-            errorMessageElement.textContent = 'El lugar es obligatorio para clases particulares o compartidas.';
-            errorMessageElement.style.display = 'block';
+            if (errorMessageElement) {
+                errorMessageElement.textContent = 'El lugar es obligatorio para clases particulares o compartidas.';
+                errorMessageElement.style.display = 'block';
+            }
             return;
         }
 
@@ -923,7 +929,11 @@ export class PracticanteDetail {
         this.render(this.practicante); // Re-render to refresh history
     } catch (error) {
         console.error('Error al registrar pago:', error);
-        displayApiError(error, errorMessageElement);
+        if (errorMessageElement) {
+            displayApiError(error, errorMessageElement);
+        } else {
+            alert('Error al registrar pago: ' + error.message);
+        }
     }
   }
 

@@ -13,7 +13,7 @@ class CajaController extends Controller
      */
     public function index(Request $request)
     {
-        $query = MovimientoCaja::query();
+        $query = MovimientoCaja::with(['lugar', 'practicante']);
 
         if ($request->has('fecha_inicio')) {
             $query->where('fecha', '>=', $request->fecha_inicio);
@@ -23,13 +23,38 @@ class CajaController extends Controller
             $query->where('fecha', '<=', $request->fecha_fin);
         }
 
-        if ($request->has('lugar_id') && $request->lugar_id !== 'all') {
-            $query->where('lugar_id', $request->lugar_id);
+        if ($request->has('tipo')) {
+            $query->where('tipo', $request->tipo);
         }
 
-        $movimientos = $query->orderBy('fecha', 'desc')->get();
+        if ($request->has('categoria')) {
+            $query->where('categoria', $request->categoria);
+        }
+
+        $lugarId = $request->get('lugar_id');
+        if ($lugarId && $lugarId !== 'all') {
+            $query->where(function($q) use ($lugarId) {
+                $q->where('lugar_id', $lugarId)
+                  ->orWhereHas('lugar', fn($sq) => $sq->where('parent_id', $lugarId));
+            });
+        }
+
+        $movimientos = $query->orderBy('fecha', 'desc')->orderBy('created_at', 'desc')->get();
 
         return response()->json(['data' => $movimientos]);
+    }
+
+    /**
+     * Devuelve las notas de crédito disponibles (sin usar) para un lugar específico.
+     */
+    public function notasCreditoDisponibles($lugarId)
+    {
+        $notas = MovimientoCaja::where('categoria', 'Nota de Crédito')
+            ->where('lugar_id', $lugarId)
+            ->whereNull('usado_en_clase_id')
+            ->get();
+
+        return response()->json(['data' => $notas]);
     }
 
     /**
@@ -37,7 +62,24 @@ class CajaController extends Controller
      */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'tipo' => 'required|in:ingreso,egreso',
+            'monto' => 'required|numeric|min:0',
+            'categoria' => 'required|string',
+            'fecha' => 'required|date',
+            'descripcion' => 'nullable|string',
+            'lugar_id' => 'nullable|exists:Lugar,id',
+            'practicante_id' => 'nullable|exists:Practicante,id',
+        ]);
+
+        $validated['usuario_id'] = $request->user()->id;
+
+        $movimiento = MovimientoCaja::create($validated);
+
+        return response()->json([
+            'message' => 'Movimiento registrado con éxito',
+            'data' => $movimiento
+        ], 201);
     }
 
     /**
@@ -45,7 +87,8 @@ class CajaController extends Controller
      */
     public function show(string $id)
     {
-        //
+        $movimiento = MovimientoCaja::with(['lugar', 'practicante'])->findOrFail($id);
+        return response()->json(['data' => $movimiento]);
     }
 
     /**
@@ -53,7 +96,24 @@ class CajaController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
+        $movimiento = MovimientoCaja::findOrFail($id);
+
+        $validated = $request->validate([
+            'tipo' => 'sometimes|required|in:ingreso,egreso',
+            'monto' => 'sometimes|required|numeric|min:0',
+            'categoria' => 'sometimes|required|string',
+            'fecha' => 'sometimes|required|date',
+            'descripcion' => 'nullable|string',
+            'lugar_id' => 'nullable|exists:Lugar,id',
+            'practicante_id' => 'nullable|exists:Practicante,id',
+        ]);
+
+        $movimiento->update($validated);
+
+        return response()->json([
+            'message' => 'Movimiento actualizado con éxito',
+            'data' => $movimiento
+        ]);
     }
 
     /**
@@ -61,6 +121,19 @@ class CajaController extends Controller
      */
     public function destroy(string $id)
     {
-        //
+        $movimiento = MovimientoCaja::findOrFail($id);
+
+        if ($movimiento->usado_en_clase_id) {
+            return response()->json([
+                'error' => 'No se puede eliminar una Nota de Crédito que ya ha sido aplicada al pago de una clase. Primero debe anular el pago en la clase correspondiente.'
+            ], 400);
+        }
+
+        $movimiento->delete();
+
+        return response()->json([
+            'message' => 'Movimiento eliminado con éxito',
+            'data' => ['id' => $id]
+        ]);
     }
 }

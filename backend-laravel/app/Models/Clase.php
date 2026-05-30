@@ -32,6 +32,18 @@ class Clase extends Model
         'monto_referencia_espacio',
     ];
 
+    protected $appends = [
+        'profesor_nombre',
+        'actividad_nombre',
+        'lugar_nombre',
+        'asistentes_count',
+        'nota_credito_id',
+        'nota_credito_monto',
+        'tiene_nota_credito',
+        'costo_tarifa',
+        'tipo_tarifa',
+    ];
+
     protected $casts = [
         'fecha' => 'date',
         'pago_espacio_realizado' => 'boolean',
@@ -68,11 +80,60 @@ class Clase extends Model
 
     public function profesor(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'profesor_id');
+        return $this->belongsTo(Practicante::class, 'profesor_id');
     }
 
     public function asistencias(): HasMany
     {
         return $this->hasMany(Asistencia::class, 'clase_id');
+    }
+
+    public function getProfesorNombreAttribute(): ?string
+    {
+        return $this->profesor ? $this->profesor->nombre_completo : null;
+    }
+
+    public function getActividadNombreAttribute(): ?string
+    {
+        return $this->actividad ? $this->actividad->nombre : null;
+    }
+
+    public function getLugarNombreAttribute(): ?string
+    {
+        return $this->lugar ? $this->lugar->nombre : null;
+    }
+
+    public function getAsistentesCountAttribute(): int
+    {
+        return $this->asistencias()->where('asistio', true)->count();
+    }
+
+    public function getNotaCreditoIdAttribute(): ?int
+    {
+        return MovimientoCaja::where('usado_en_clase_id', $this->id)
+            ->whereNull('deleted_at')
+            ->value('id');
+    }
+
+    public function getNotaCreditoMontoAttribute(): ?float
+    {
+        return MovimientoCaja::where('usado_en_clase_id', $this->id)
+            ->whereNull('deleted_at')
+            ->value('monto');
+    }
+
+    public function getTieneNotaCreditoAttribute(): bool
+    {
+        return $this->nota_credito_id !== null;
+    }
+
+    public function getCostoTarifaAttribute(): float
+    {
+        return (float) ($this->lugar->costo_tarifa ?? 0);
+    }
+
+    public function getTipoTarifaAttribute(): string
+    {
+        return $this->lugar->tipo_tarifa ?? 'por_hora';
     }
 }

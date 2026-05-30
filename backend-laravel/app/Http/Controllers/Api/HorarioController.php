@@ -104,8 +104,33 @@ class HorarioController extends Controller
     {
         $horario = Horario::find($id);
         if (!$horario) return response()->json(['error' => 'Horario no encontrado'], 404);
-        $horario->delete();
-        return response()->json(['message' => 'Horario eliminado con éxito']);
+        
+        // VALIDACIÓN: No permitir eliminar si hay alumnos inscriptos activos
+        $inscripcionesActivasCount = \App\Models\InscripcionHorario::where('horario_id', $id)
+            ->where('activo', true)
+            ->count();
+
+        if ($inscripcionesActivasCount > 0) {
+            return response()->json([
+                'error' => "No se puede eliminar el horario porque tiene {$inscripcionesActivasCount} alumno(s) inscriptos. Debe desvincular a los alumnos de este horario antes de eliminarlo."
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($horario) {
+            $oldData = $horario->toArray();
+            $horario->delete();
+
+            // Registrar Historial
+            HistorialHorario::create([
+                'horario_id' => $horario->id,
+                'accion' => 'DELETE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => null,
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json(['message' => 'Horario eliminado con éxito']);
+        });
     }
 
     /**
@@ -180,6 +205,20 @@ class HorarioController extends Controller
                         'fecha_desde' => $today,
                         'activo' => true
                     ]);
+                }
+            });
+
+            return response()->json(['message' => 'Inscripciones actualizadas con éxito']);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error al actualizar inscripciones', 'details' => $e->getMessage()], 500);
+        }
+    }
+}
+inscripciones', 'details' => $e->getMessage()], 500);
+        }
+    }
+}
+         ]);
                 }
             });
 

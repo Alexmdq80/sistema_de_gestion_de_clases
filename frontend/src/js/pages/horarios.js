@@ -77,7 +77,7 @@ export class HorariosPage {
               this.renderView();
             }
           });
-          grid.setHorarios(response.data);
+          grid.setHorarios(response.data.filter(h => h.activo));
           grid.render();
         }
       } catch (error) {

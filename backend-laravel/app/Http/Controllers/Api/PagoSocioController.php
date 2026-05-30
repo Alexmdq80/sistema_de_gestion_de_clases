@@ -62,13 +62,24 @@ class PagoSocioController extends Controller
             return response()->json(['error' => 'Los cobros a alumnos deben registrarse desde la sección de Practicantes para impactar en caja.'], 403);
         }
 
-        $validated['usuario_id'] = auth()->id();
-        $pagoSocio = PagoSocio::create($validated);
+        return DB::transaction(function () use ($validated, $socio) {
+            $validated['usuario_id'] = auth()->id();
+            $pagoSocio = PagoSocio::create($validated);
 
-        return response()->json([
-            'message' => 'Pago de cuota registrado exitosamente',
-            'data' => $pagoSocio->load(['socio.practicante', 'socio.lugar'])
-        ], 201);
+            // Registrar Historial
+            HistorialPagoSocio::create([
+                'pago_socio_id' => $pagoSocio->id,
+                'accion' => 'CREATE',
+                'datos_anteriores' => null,
+                'datos_nuevos' => $pagoSocio->toArray(),
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Pago de cuota registrado exitosamente',
+                'data' => $pagoSocio->load(['socio.practicante', 'socio.lugar'])
+            ], 201);
+        });
     }
 
     /**
@@ -89,22 +100,34 @@ class PagoSocioController extends Controller
         $pagoSocio = PagoSocio::find($id);
         if (!$pagoSocio) return response()->json(['error' => 'Pago no encontrado'], 404);
 
-        $validated = $request->validate([
-            'monto' => 'sometimes|required|numeric|min:0',
-            'fecha_pago' => 'nullable|date',
-            'mes_abono' => 'sometimes|required|string',
-            'fecha_vencimiento' => 'nullable|date',
-            'observaciones' => 'nullable|string',
-            'estado_desconocido' => 'boolean',
-            'pagado_directo' => 'boolean'
-        ]);
+        return DB::transaction(function () use ($request, $pagoSocio) {
+            $validated = $request->validate([
+                'monto' => 'sometimes|required|numeric|min:0',
+                'fecha_pago' => 'nullable|date',
+                'mes_abono' => 'sometimes|required|string',
+                'fecha_vencimiento' => 'nullable|date',
+                'observaciones' => 'nullable|string',
+                'estado_desconocido' => 'boolean',
+                'pagado_directo' => 'boolean'
+            ]);
 
-        $pagoSocio->update($validated);
+            $oldData = $pagoSocio->toArray();
+            $pagoSocio->update($validated);
 
-        return response()->json([
-            'message' => 'Pago de cuota actualizado',
-            'data' => $pagoSocio->load(['socio.practicante', 'socio.lugar'])
-        ]);
+            // Registrar Historial
+            HistorialPagoSocio::create([
+                'pago_socio_id' => $pagoSocio->id,
+                'accion' => 'UPDATE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => $pagoSocio->fresh()->toArray(),
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Pago de cuota actualizado',
+                'data' => $pagoSocio->load(['socio.practicante', 'socio.lugar'])
+            ]);
+        });
     }
 
     /**

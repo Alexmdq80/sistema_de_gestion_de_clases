@@ -36,7 +36,7 @@ export class Asistencia {
             SELECT 
                 c.id as clase_id,
                 a.id as asistencia_id,
-                IF(a.id IS NOT NULL, 1, 0) as ya_anotado,
+                IF(a.id IS NOT NULL OR ih.id IS NOT NULL, 1, 0) as ya_anotado,
                 c.fecha, 
                 c.hora, 
                 c.hora_fin,
@@ -50,16 +50,18 @@ export class Asistencia {
                 l.nombre as lugar_nombre
             FROM Clase c
             LEFT JOIN Asistencia a ON c.id = a.clase_id AND a.practicante_id = ?
+            LEFT JOIN InscripcionHorario ih ON c.horario_id = ih.horario_id AND ih.practicante_id = ? AND ih.activo = 1
             JOIN Actividad act ON c.actividad_id = act.id
             JOIN Lugar l ON c.lugar_id = l.id
             WHERE c.deleted_at IS NULL
             AND (
                 a.id IS NOT NULL -- Clases donde ya está anotado (incluye canceladas)
+                OR ih.id IS NOT NULL -- O clases donde está inscripto por horario
                 OR (c.tipo = 'flexible' AND c.estado = 'programada') -- O clases particulares disponibles
             )
         `;
 
-        const params = [practicanteId];
+        const params = [practicanteId, practicanteId];
 
         if (filters.fecha_inicio) {
             sql += ' AND c.fecha >= ?';
@@ -114,28 +116,36 @@ export class Asistencia {
         const fechaClase = (clase.fecha instanceof Date) 
             ? clase.fecha.toISOString().split('T')[0] 
             : clase.fecha;
+        const horarioId = clase.horario_id || 0;
 
         const sql = `
             SELECT 
                 p.id, 
                 p.nombre_completo, 
-                IFNULL(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo') as abono_nombre,
-                IF(ih.id IS NOT NULL, 1, 0) as es_inscripto
+                (
+                    SELECT COALESCE(GROUP_CONCAT(DISTINCT ta.nombre SEPARATOR ', '), 'Sin Abono Activo')
+                    FROM Abono ab
+                    JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
+                    WHERE ab.practicante_id = p.id 
+                        AND ab.estado = 'activo' 
+                        AND ab.deleted_at IS NULL
+                        AND ab.fecha_inicio <= ?
+                        AND ab.fecha_vencimiento >= ?
+                ) as abono_nombre,
+                (
+                    SELECT IF(COUNT(*) > 0, 1, 0)
+                    FROM InscripcionHorario ih
+                    WHERE ih.practicante_id = p.id 
+                        AND ih.horario_id = ? 
+                        AND ih.activo = 1
+                ) as es_inscripto
             FROM Practicante p
-            LEFT JOIN Abono ab ON p.id = ab.practicante_id 
-                AND ab.estado = 'activo' 
-                AND ab.deleted_at IS NULL
-                AND ab.fecha_inicio <= ?
-                AND ab.fecha_vencimiento >= ?
-            LEFT JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
-            LEFT JOIN InscripcionHorario ih ON p.id = ih.practicante_id 
-                AND ih.horario_id = ? 
-                AND ih.activo = 1
-            WHERE p.deleted_at IS NULL AND p.es_profesor = 0 AND p.activo = 1
-            GROUP BY p.id, p.nombre_completo, ih.id
+            WHERE p.deleted_at IS NULL 
+                AND p.es_profesor = 0 
+                AND p.activo = 1
             ORDER BY es_inscripto DESC, p.nombre_completo ASC
         `;
-        const [rows] = await pool.execute(sql, [fechaClase, fechaClase, clase.horario_id || 0]);
+        const [rows] = await pool.execute(sql, [fechaClase, fechaClase, horarioId]);
         return rows;
     }
 

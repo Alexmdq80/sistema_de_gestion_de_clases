@@ -54,4 +54,21 @@ class Abono extends Model
     {
         return $this->hasMany(Pago::class, 'abono_id');
     }
+
+    public function historial(): HasMany
+    {
+        return $this->hasMany(HistorialAbono::class, 'abono_id');
+    }
+
+    /**
+     * Obtener el abono activo de un practicante.
+     */
+    public static function findActiveByPracticanteId($practicanteId)
+    {
+        return self::where('practicante_id', $practicanteId)
+            ->where('estado', 'activo')
+            ->where('fecha_vencimiento', '>=', now()->toDateString())
+            ->orderBy('fecha_vencimiento', 'desc')
+            ->first();
+    }
 }

@@ -5,21 +5,93 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Pago;
 use App\Models\MovimientoCaja;
+use App\Models\Practicante;
+use App\Models\TipoAbono;
+use App\Models\Abono;
+use App\Models\HistorialAbono;
 use App\Http\Requests\StorePagoRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class PagoController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Pago::with(['practicante', 'lugar']);
+        $lugarId = $request->get('lugar_id');
+        $filterByMesAbono = $request->get('filter_by_mes_abono') === 'true';
+        $mes = $request->get('mes');
+        $anio = $request->get('anio');
+        $fechaInicio = $request->get('fecha_inicio') ?: $request->get('start_date');
+        $fechaFin = $request->get('fecha_fin') ?: $request->get('end_date');
 
-        if ($request->has('start_date') && $request->has('end_date')) {
-            $query->whereBetween('fecha', [$request->start_date, $request->end_date]);
+        // 1. Incomes (Student payments)
+        $queryIncomes = Pago::with(['practicante', 'lugar', 'abono.tipoAbono']);
+
+        if ($filterByMesAbono && $mes && $anio) {
+            $monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            $mesNombre = $monthNames[$mes - 1];
+            $queryIncomes->where('mes_abono', 'LIKE', "%{$mesNombre}%{$anio}%");
+        } elseif ($fechaInicio && $fechaFin) {
+            $queryIncomes->whereBetween('fecha', [$fechaInicio, $fechaFin]);
         }
 
-        return response()->json(['data' => $query->orderBy('fecha', 'desc')->get()]);
+        if ($lugarId && $lugarId !== 'all') {
+            $queryIncomes->where(function($q) use ($lugarId) {
+                $q->where('lugar_id', $lugarId)
+                  ->orWhereHas('lugar', fn($sq) => $sq->where('parent_id', $lugarId));
+            });
+        }
+
+        $incomes = $queryIncomes->orderBy('fecha', 'desc')->get();
+
+        // 2. Expenses (Pago Cuota Social al Club - from PagoSocio)
+        $queryExpenses = \App\Models\PagoSocio::with(['socio.practicante', 'socio.lugar']);
+
+        if ($filterByMesAbono && $mes && $anio) {
+            $monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            $mesNombre = $monthNames[$mes - 1];
+            $queryExpenses->where('mes_abono', 'LIKE', "%{$mesNombre}%{$anio}%");
+        } elseif ($fechaInicio && $fechaFin) {
+            $queryExpenses->whereBetween('fecha_pago', [$fechaInicio, $fechaFin]);
+        } else {
+            // If no filters, PagoSocio should only be returned if it has a payment date
+            $queryExpenses->whereNotNull('fecha_pago');
+        }
+
+        if ($lugarId && $lugarId !== 'all') {
+            $queryExpenses->whereHas('socio', function($q) use ($lugarId) {
+                $q->where('lugar_id', $lugarId)
+                  ->orWhereHas('lugar', fn($sq) => $sq->where('parent_id', $lugarId));
+            });
+        }
+
+        $expenses = $queryExpenses->orderBy('fecha_pago', 'desc')->get()->map(function($ps) {
+            if (!$ps->socio || !$ps->socio->practicante || !$ps->socio->lugar) {
+                return null;
+            }
+            return [
+                'id' => $ps->id * -1000, // Matching Node's logic for virtual IDs
+                'practicante_id' => $ps->socio->practicante_id,
+                'pago_socio_id' => $ps->id,
+                'mes_abono' => $ps->mes_abono,
+                'lugar_id' => $ps->socio->lugar_id,
+                'fecha' => $ps->fecha_pago,
+                'monto' => $ps->monto * -1,
+                'metodo_pago' => 'efectivo',
+                'notas' => "Pago Cuota Social al Club: " . ($ps->observaciones ?? ''),
+                'pago_tipo' => 'egreso',
+                'tipo_abono_nombre' => 'Egreso Cuota Social (Club)',
+                'categoria' => null,
+                'practicante_nombre' => $ps->socio->practicante->nombre_completo,
+                'lugar_nombre' => $ps->socio->lugar->nombre,
+            ];
+        })->filter()->values();
+
+        // Merge and return
+        $data = $incomes->concat($expenses)->sortByDesc('fecha')->values();
+
+        return response()->json(['data' => $data]);
     }
 
     public function store(StorePagoRequest $request)
@@ -28,20 +100,8 @@ class PagoController extends Controller
             // 1. Crear el Registro de Pago
             $pago = Pago::create($request->validated());
 
-            // 2. Crear automáticamente el Movimiento de Caja (Ingreso)
-            MovimientoCaja::create([
-                'tipo' => 'ingreso',
-                'monto' => $pago->monto,
-                'categoria' => 'Abono/Clase',
-                'descripcion' => "Cobro de abono - {$pago->mes_abono}. " . ($pago->notas ?? ''),
-                'fecha' => $pago->fecha,
-                'lugar_id' => $pago->lugar_id,
-                'practicante_id' => $pago->practicante_id,
-                'usuario_id' => auth()->id(),
-            ]);
-
             return response()->json([
-                'message' => 'Pago y movimiento de caja registrados correctamente',
+                'message' => 'Pago registrado correctamente',
                 'data' => $pago
             ], 201);
         });
@@ -53,12 +113,51 @@ class PagoController extends Controller
             $pago = Pago::find($id);
             if (!$pago) return response()->json(['error' => 'Pago no encontrado'], 404);
 
-            // Nota: Aquí deberíamos decidir si anulamos también el movimiento de caja
-            // Por ahora hacemos soft delete del pago
+            $userId = auth()->id();
+
+            // 1. Soft delete del pago
             $pago->delete();
+
+            // 2. Si está vinculado a un Abono, marcar abono como cancelado
+            if ($pago->abono_id) {
+                $abono = Abono::find($pago->abono_id);
+                if ($abono) {
+                    $oldAbono = $abono->toArray();
+                    $abono->update(['estado' => 'cancelado']);
+                    
+                    // Registrar historial
+                    HistorialAbono::create([
+                        'abono_id' => $abono->id,
+                        'accion' => 'UPDATE',
+                        'datos_anteriores' => $oldAbono,
+                        'datos_nuevos' => $abono->fresh()->toArray(),
+                        'usuario_id' => $userId
+                    ]);
+                }
+            }
+
+            // 3. Si está vinculado a un PagoSocio, eliminarlo también
+            if ($pago->pago_socio_id) {
+                $pagoSocio = \App\Models\PagoSocio::find($pago->pago_socio_id);
+                if ($pagoSocio) {
+                    $pagoSocio->delete();
+                }
+            }
 
             return response()->json(['message' => 'Pago anulado exitosamente']);
         });
+    }
+
+    /**
+     * Alias para eliminar pago desde la ruta de practicantes.
+     */
+    public function destroyFromPracticante($practicanteId, $pagoId)
+    {
+        // Validamos que el pago pertenezca al practicante
+        $pago = Pago::where('id', $pagoId)->where('practicante_id', $practicanteId)->first();
+        if (!$pago) return response()->json(['error' => 'Pago no encontrado para este practicante'], 404);
+
+        return $this->destroy($pagoId);
     }
 
     /**
@@ -73,6 +172,97 @@ class PagoController extends Controller
             ->get();
 
         return response()->json(['data' => $pagos]);
+    }
+
+    /**
+     * Registrar un pago de abono desde la ficha del practicante.
+     */
+    public function storePracticantePago(Request $request, $id)
+    {
+        $request->validate([
+            'tipo_abono_id' => 'required|exists:TipoAbono,id',
+            'monto' => 'required|numeric|min:0',
+            'metodo_pago' => 'required|string',
+            'cantidad' => 'integer|min:1',
+            'fecha_pago' => 'nullable|date',
+            'fecha_vencimiento' => 'nullable|date',
+            'mes_abono' => 'nullable|string',
+            'lugar_id' => 'nullable|exists:Lugar,id',
+            'notas' => 'nullable|string'
+        ]);
+
+        return DB::transaction(function () use ($request, $id) {
+            $practicante = Practicante::findOrFail($id);
+            $tipoAbono = TipoAbono::findOrFail($request->tipo_abono_id);
+            $userId = auth()->id();
+
+            $today = Carbon::now();
+            $fechaPago = $request->fecha_pago ?: $today->toDateString();
+            $cantidad = $request->cantidad ?: 1;
+
+            // 1. Determinar fecha de inicio
+            $activeAbono = Abono::findActiveByPracticanteId($id);
+            $fechaInicio = $today->copy();
+
+            $isFlexible = in_array($tipoAbono->categoria, ['particular', 'compartida']);
+
+            if (!$isFlexible && $activeAbono && Carbon::parse($activeAbono->fecha_vencimiento)->gte($today)) {
+                $fechaInicio = Carbon::parse($activeAbono->fecha_vencimiento)->addDay();
+            }
+
+            // 2. Calcular fecha de vencimiento
+            if ($request->fecha_vencimiento) {
+                $fechaVencimiento = Carbon::parse($request->fecha_vencimiento);
+            } else {
+                $duracion = $tipoAbono->duracion_dias !== null ? $tipoAbono->duracion_dias : 0;
+                $totalDuracion = $duracion * $cantidad;
+                $fechaVencimiento = $fechaInicio->copy()->addDays($totalDuracion);
+            }
+
+            // Seguridad: fechaVencimiento >= fechaInicio
+            if ($fechaVencimiento->lt($fechaInicio)) {
+                $fechaInicio = $fechaVencimiento->copy();
+            }
+
+            // 3. Crear Abono
+            $abono = Abono::create([
+                'practicante_id' => $id,
+                'tipo_abono_id' => $request->tipo_abono_id,
+                'fecha_inicio' => $fechaInicio->toDateString(),
+                'fecha_vencimiento' => $fechaVencimiento->toDateString(),
+                'mes_abono' => $request->mes_abono,
+                'lugar_id' => $request->lugar_id ?: $tipoAbono->lugar_id,
+                'estado' => 'activo',
+                'cantidad' => $cantidad,
+                'monto_pactado' => $request->monto // En la ficha el usuario ya envía el monto total
+            ]);
+
+            // Registrar historial del Abono
+            HistorialAbono::create([
+                'abono_id' => $abono->id,
+                'accion' => 'CREATE',
+                'datos_anteriores' => null,
+                'datos_nuevos' => $abono->toArray(),
+                'usuario_id' => $userId
+            ]);
+
+            // 4. Crear Pago
+            $pago = Pago::create([
+                'practicante_id' => $id,
+                'abono_id' => $abono->id,
+                'mes_abono' => $abono->mes_abono,
+                'lugar_id' => $abono->lugar_id,
+                'fecha' => $fechaPago,
+                'monto' => $request->monto,
+                'metodo_pago' => $request->metodo_pago,
+                'notas' => $request->notas
+            ]);
+
+            return response()->json([
+                'message' => 'Pago registrado correctamente',
+                'data' => $pago
+            ], 201);
+        });
     }
 
     /**
@@ -130,17 +320,6 @@ class PagoController extends Controller
                 'notas' => $request->notas
             ]);
 
-            MovimientoCaja::create([
-                'tipo' => 'ingreso',
-                'monto' => $pago->monto,
-                'categoria' => 'Abono/Clase',
-                'descripcion' => "Pago parcial abono - {$pago->mes_abono}. " . ($pago->notas ?? ''),
-                'fecha' => $pago->fecha,
-                'lugar_id' => $pago->lugar_id,
-                'practicante_id' => $pago->practicante_id,
-                'usuario_id' => auth()->id(),
-            ]);
-
             return response()->json(['data' => $pago], 201);
         });
     }
@@ -172,15 +351,13 @@ class PagoController extends Controller
                 'abono_id' => null
             ]);
 
-            MovimientoCaja::create([
-                'tipo' => 'ingreso',
-                'monto' => $pago->monto,
-                'categoria' => 'Cuota Social',
-                'descripcion' => "Cobro cuota social - {$pago->mes_abono}. " . ($pago->notas ?? ''),
-                'fecha' => $pago->fecha,
-                'lugar_id' => $pago->lugar_id,
-                'practicante_id' => $pago->practicante_id,
-                'usuario_id' => auth()->id(),
+            // Registrar Historial Pago
+            HistorialPago::create([
+                'pago_id' => $pago->id,
+                'accion' => 'CREATE',
+                'datos_anteriores' => null,
+                'datos_nuevos' => $pago->toArray(),
+                'usuario_id' => auth()->id()
             ]);
 
             return response()->json(['data' => $pago], 201);
@@ -201,7 +378,17 @@ class PagoController extends Controller
             'lugar_id' => 'sometimes|required|exists:Lugar,id'
         ]);
 
+        $oldData = $pago->toArray();
         $pago->update($validated);
+
+        // Registrar Historial Pago
+        HistorialPago::create([
+            'pago_id' => $pago->id,
+            'accion' => 'UPDATE',
+            'datos_anteriores' => $oldData,
+            'datos_nuevos' => $pago->fresh()->toArray(),
+            'usuario_id' => auth()->id()
+        ]);
 
         return response()->json([
             'message' => 'Pago actualizado exitosamente',

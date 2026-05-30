@@ -209,7 +209,24 @@ class SocioController extends Controller
     {
         $socio = Socio::find($id);
         if (!$socio) return response()->json(['error' => 'Socio no encontrado'], 404);
-        $socio->delete();
-        return response()->json(['message' => 'Socio eliminado']);
+
+        return DB::transaction(function () use ($socio) {
+            $oldData = $socio->toArray();
+            $socio->delete();
+
+            // Registrar Historial
+            HistorialSocio::create([
+                'socio_id' => $socio->id,
+                'accion' => 'DELETE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => null,
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json(['message' => 'Socio eliminado']);
+        });
+    }
+}
+> 'Socio eliminado']);
     }
 }

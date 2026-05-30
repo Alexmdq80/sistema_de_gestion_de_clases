@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Practicante;
+use App\Models\HistorialPracticante;
 use App\Http\Requests\StorePracticanteRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PracticanteController extends Controller
 {
@@ -48,12 +50,22 @@ class PracticanteController extends Controller
      */
     public function store(StorePracticanteRequest $request)
     {
-        $practicante = Practicante::create($request->validated());
+        return DB::transaction(function () use ($request) {
+            $practicante = Practicante::create($request->validated());
 
-        return response()->json([
-            'message' => 'Practicante creado exitosamente',
-            'data' => $practicante
-        ], 201);
+            HistorialPracticante::create([
+                'practicante_id' => $practicante->id,
+                'accion' => 'CREATE',
+                'datos_anteriores' => null,
+                'datos_nuevos' => $practicante->toArray(),
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Practicante creado exitosamente',
+                'data' => $practicante
+            ], 201);
+        });
     }
 
     /**
@@ -81,12 +93,39 @@ class PracticanteController extends Controller
             return response()->json(['error' => 'Practicante no encontrado'], 404);
         }
 
-        $practicante->update($request->validated());
+        $data = $request->validated();
 
-        return response()->json([
-            'message' => 'Practicante actualizado exitosamente',
-            'data' => $practicante
-        ]);
+        // VALIDACIÓN: No permitir archivar (activo = false) si tiene abono vigente
+        if (isset($data['activo']) && $data['activo'] == false && $practicante->activo == true) {
+            $hasActiveAbono = \App\Models\Abono::where('practicante_id', $id)
+                ->where('estado', 'activo')
+                ->where('fecha_vencimiento', '>=', now()->toDateString())
+                ->exists();
+
+            if ($hasActiveAbono) {
+                return response()->json([
+                    'error' => 'No se puede archivar al practicante porque tiene un abono vigente. Debe anular o esperar al vencimiento del abono primero.'
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $practicante, $data) {
+            $oldData = $practicante->toArray();
+            $practicante->update($data);
+
+            HistorialPracticante::create([
+                'practicante_id' => $practicante->id,
+                'accion' => 'UPDATE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => $practicante->fresh()->toArray(),
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Practicante actualizado exitosamente',
+                'data' => $practicante
+            ]);
+        });
     }
 
     /**
@@ -100,10 +139,33 @@ class PracticanteController extends Controller
             return response()->json(['error' => 'Practicante no encontrado'], 404);
         }
 
-        $practicante->delete();
+        // VALIDACIÓN: No permitir eliminar si tiene abono vigente
+        $hasActiveAbono = \App\Models\Abono::where('practicante_id', $id)
+            ->where('estado', 'activo')
+            ->where('fecha_vencimiento', '>=', now()->toDateString())
+            ->exists();
 
-        return response()->json([
-            'message' => 'Practicante eliminado exitosamente (Soft Delete)'
-        ]);
+        if ($hasActiveAbono) {
+            return response()->json([
+                'error' => 'No se puede eliminar al practicante porque tiene un abono vigente. Anule el abono o espere a que venza antes de dar de baja al practicante.'
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($practicante) {
+            $oldData = $practicante->toArray();
+            $practicante->delete();
+
+            HistorialPracticante::create([
+                'practicante_id' => $practicante->id,
+                'accion' => 'DELETE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => null,
+                'usuario_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Practicante eliminado exitosamente (Soft Delete)'
+            ]);
+        });
     }
 }

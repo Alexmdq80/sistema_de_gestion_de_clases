@@ -25,6 +25,14 @@ class Pago extends Model
         'deuda_id',
     ];
 
+    protected $appends = [
+        'pago_tipo',
+        'tipo_abono_nombre',
+        'categoria',
+        'practicante_nombre',
+        'lugar_nombre',
+    ];
+
     protected $casts = [
         'fecha' => 'date',
         'monto' => 'float',
@@ -56,5 +64,33 @@ class Pago extends Model
     public function deuda(): BelongsTo
     {
         return $this->belongsTo(Deuda::class, 'deuda_id');
+    }
+
+    public function getPagoTipoAttribute(): string
+    {
+        return 'ingreso';
+    }
+
+    public function getTipoAbonoNombreAttribute(): string
+    {
+        if ($this->abono && $this->abono->tipoAbono) {
+            return $this->abono->tipoAbono->nombre;
+        }
+        return 'Recepción Cuota Social';
+    }
+
+    public function getCategoriaAttribute(): ?string
+    {
+        return $this->abono && $this->abono->tipoAbono ? $this->abono->tipoAbono->categoria : null;
+    }
+
+    public function getPracticanteNombreAttribute(): ?string
+    {
+        return $this->practicante ? $this->practicante->nombre_completo : null;
+    }
+
+    public function getLugarNombreAttribute(): ?string
+    {
+        return $this->lugar ? $this->lugar->nombre : null;
     }
 }
