@@ -21,6 +21,7 @@ class MovimientoCaja extends Model
         'lugar_id',
         'clase_id',
         'usado_en_clase_id',
+        'usado_en_pago_id',
         'practicante_id',
         'usuario_id',
     ];

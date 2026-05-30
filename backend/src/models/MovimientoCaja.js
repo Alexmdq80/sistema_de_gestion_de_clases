@@ -14,6 +14,7 @@ export class MovimientoCaja {
         this.lugar_id = data.lugar_id || null;
         this.clase_id = data.clase_id || null;
         this.usado_en_clase_id = data.usado_en_clase_id || null;
+        this.usado_en_pago_id = data.usado_en_pago_id || null;
         this.practicante_id = data.practicante_id || null;
         this.usuario_id = data.usuario_id;
         this.created_at = data.created_at || null;
@@ -84,8 +85,8 @@ export class MovimientoCaja {
 
     static async create(data) {
         const sql = `
-            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, clase_id, usado_en_clase_id, practicante_id, usuario_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, clase_id, usado_en_clase_id, usado_en_pago_id, practicante_id, usuario_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const values = [
             data.tipo,
@@ -96,6 +97,7 @@ export class MovimientoCaja {
             data.lugar_id || null,
             data.clase_id || null,
             data.usado_en_clase_id || null,
+            data.usado_en_pago_id || null,
             data.practicante_id || null,
             data.usuario_id
         ];
@@ -105,7 +107,7 @@ export class MovimientoCaja {
     }
 
     static async update(id, data) {
-        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'lugar_id', 'clase_id', 'usado_en_clase_id', 'practicante_id'];
+        const allowedFields = ['tipo', 'monto', 'categoria', 'descripcion', 'fecha', 'lugar_id', 'clase_id', 'usado_en_clase_id', 'usado_en_pago_id', 'practicante_id'];
         const updates = [];
         const values = [];
 
@@ -164,6 +166,17 @@ export class MovimientoCaja {
         return result.affectedRows > 0;
     }
 
+    /**
+     * Release credit notes used in a specific payment (make them available again)
+     * @param {number} pagoId 
+     * @returns {Promise<boolean>}
+     */
+    static async releaseByPagoId(pagoId) {
+        const sql = 'UPDATE MovimientoCaja SET usado_en_pago_id = NULL WHERE usado_en_pago_id = ? AND deleted_at IS NULL';
+        const [result] = await pool.execute(sql, [pagoId]);
+        return result.affectedRows > 0;
+    }
+
     toJSON() {
         return {
             id: this.id,
@@ -176,6 +189,7 @@ export class MovimientoCaja {
             lugar_nombre: this.lugar_nombre,
             clase_id: this.clase_id,
             usado_en_clase_id: this.usado_en_clase_id,
+            usado_en_pago_id: this.usado_en_pago_id,
             practicante_id: this.practicante_id,
             practicante_nombre: this.practicante_nombre,
             usuario_id: this.usuario_id,

@@ -77,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('pagos/social-fee', [PagoController::class, 'storeSocialFee']);
     Route::apiResource('pagos', PagoController::class);
     Route::get('caja/notas-credito/{lugarId}', [CajaController::class, 'notasCreditoDisponibles']);
+    Route::get('caja/notas-credito/practicante/{practicanteId}', [CajaController::class, 'notasCreditoPracticante']);
     Route::apiResource('caja', CajaController::class);
 
     // Deudas

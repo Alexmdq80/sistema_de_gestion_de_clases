@@ -125,6 +125,22 @@ export class AsistenciaMarker {
                                             </div>
                                         </div>
                                     ` : ''}
+
+                                    ${c.tipo === 'flexible' ? `
+                                        <div id="nota-credito-practicante-group" class="mt-3 p-2 border rounded bg-white" style="border-color: #17a2b8 !important;">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="generar-nota-credito-practicante">
+                                                <label class="form-check-label font-weight-bold" for="generar-nota-credito-practicante">
+                                                    ¿Generar Nota de Crédito para el practicante?
+                                                </label>
+                                            </div>
+                                            <div id="monto-nota-credito-practicante-container" class="mt-2" style="display: none;">
+                                                <label for="monto-nota-credito-practicante"><small>Monto a acreditar ($):</small></label>
+                                                <input type="number" step="0.01" id="monto-nota-credito-practicante" class="form-control form-control-sm" value="0">
+                                                <small class="text-muted">El saldo se registrará a favor del practicante para futuros pagos.</small>
+                                            </div>
+                                        </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="form-group">
@@ -269,13 +285,23 @@ export class AsistenciaMarker {
             });
         }
 
+        const ncPracticanteCheckbox = this.container.querySelector('#generar-nota-credito-practicante');
+        if (ncPracticanteCheckbox) {
+            ncPracticanteCheckbox.addEventListener('change', () => {
+                this.container.querySelector('#monto-nota-credito-practicante-container').style.display = ncPracticanteCheckbox.checked ? 'block' : 'none';
+            });
+        }
+
         this.container.querySelector('#save-attendance-btn').addEventListener('click', async () => {
             const updates = [];
+            const practicantes_ids = [];
             this.container.querySelectorAll('.attendance-checkbox').forEach(cb => {
+                const pId = parseInt(cb.getAttribute('data-id'), 10);
                 updates.push({
-                    practicante_id: parseInt(cb.getAttribute('data-id'), 10),
+                    practicante_id: pId,
                     asistio: cb.checked ? 1 : 0
                 });
+                practicantes_ids.push(pId);
             });
 
             const estado = estadoSelect.value;
@@ -283,11 +309,17 @@ export class AsistenciaMarker {
             const observaciones = this.container.querySelector('#clase-observaciones').value;
             const motivo_cancelacion = this.container.querySelector('#motivo-cancelacion') ? this.container.querySelector('#motivo-cancelacion').value : '';
             
-            // Recoger datos de nota de crédito
+            // Recoger datos de nota de crédito salon
             const ncCheckboxValue = this.container.querySelector('#generar-nota-credito');
             const generar_nota_credito = ncCheckboxValue ? ncCheckboxValue.checked : false;
             const monto_nota_credito_el = this.container.querySelector('#monto-nota-credito');
             const monto_nota_credito = monto_nota_credito_el ? parseFloat(monto_nota_credito_el.value) : 0;
+
+            // Recoger datos de nota de crédito practicante
+            const ncPracticanteCheckboxValue = this.container.querySelector('#generar-nota-credito-practicante');
+            const generar_nota_credito_practicante = ncPracticanteCheckboxValue ? ncPracticanteCheckboxValue.checked : false;
+            const monto_nota_credito_practicante_el = this.container.querySelector('#monto-nota-credito-practicante');
+            const monto_nota_credito_practicante = monto_nota_credito_practicante_el ? parseFloat(monto_nota_credito_practicante_el.value) : 0;
 
             try {
                 // 1. Save class data
@@ -298,6 +330,9 @@ export class AsistenciaMarker {
                     motivo_cancelacion,
                     generar_nota_credito,
                     monto_nota_credito,
+                    generar_nota_credito_practicante,
+                    monto_nota_credito_practicante,
+                    practicantes_ids,
                     tipo: this.options.clase.tipo,
                     fecha: this.options.clase.fecha,
                     hora: this.options.clase.hora,

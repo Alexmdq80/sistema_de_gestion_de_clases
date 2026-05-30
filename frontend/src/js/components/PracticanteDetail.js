@@ -326,6 +326,14 @@ export class PracticanteDetail {
                 <input type="date" id="fecha-pago-input" name="fecha_pago" required />
             </div>
 
+            <div id="credit-note-section" class="form-group" style="display: none; border: 1px solid #17a2b8; padding: 10px; border-radius: 4px; background: #e3f2fd;">
+                <label><strong>Notas de Crédito a favor:</strong></label>
+                <div id="nota-credito-list" class="mt-2" style="max-height: 150px; overflow-y: auto; background: white; padding: 5px; border-radius: 4px; border: 1px solid #ced4da;">
+                    <!-- Checkboxes will be rendered here -->
+                </div>
+                <small id="nc-info" class="text-info mt-1 d-block"></small>
+            </div>
+
             <div id="selected-abono-details" style="margin-top: 1rem; padding: 10px; background: #f9f9f9; border-radius: 4px;"></div>
             
             <div class="form-group">
@@ -824,9 +832,13 @@ export class PracticanteDetail {
 
         // Update the editable amount input
         const montoInput = this.container.querySelector('#monto-input');
-        if (montoInput) {
-            montoInput.value = totalAbono.toFixed(2);
-        }
+        const ncSelect = this.container.querySelector('#nota-credito-select');
+        const selectedNc = ncSelect ? ncSelect.options[ncSelect.selectedIndex] : null;
+        const ncAmount = (selectedNc && selectedNc.value) ? parseFloat(selectedNc.dataset.monto) : 0;
+        
+        // Store current suggested amount as original base
+        this.originalAmount = totalAbono;
+        this.calculateFinalAmount();
     } else {
         detailsDiv.innerHTML = '';
         mesAbonoGroup.style.display = 'none';
@@ -865,11 +877,13 @@ export class PracticanteDetail {
     const fechaPagoInput = paymentForm.querySelector('#fecha-pago-input');
     const lugarSelect = paymentForm.querySelector('#lugar-id-select');
     const metodoPagoSelect = paymentForm.querySelector('#metodo-pago-select');
+    const ncCheckboxes = paymentForm.querySelectorAll('.nc-checkbox:checked');
     const notasTextarea = paymentForm.querySelector('#notas-textarea');
     const errorMessageElement = paymentForm.querySelector('#payment-error-message');
 
     const fecha_pago = fechaPagoInput.value;
     const metodo_pago = metodoPagoSelect.value;
+    const nota_credito_ids = Array.from(ncCheckboxes).map(cb => parseInt(cb.value, 10));
     const notas = notasTextarea.value;
     const monto = montoInput.value;
 
@@ -914,6 +928,7 @@ export class PracticanteDetail {
             fecha_pago,
             lugar_id: lugar_id ? parseInt(lugar_id, 10) : null,
             metodo_pago, 
+            nota_credito_ids,
             notas 
         };
 
@@ -1017,7 +1032,7 @@ export class PracticanteDetail {
     }
   }
 
-  openCreatePaymentModal() {
+  async openCreatePaymentModal() {
     this.isEditingPayment = false;
     this.currentPagoId = null;
     
@@ -1040,8 +1055,68 @@ export class PracticanteDetail {
         mesAbonoSelect.innerHTML = this.generateMonthOptions(today);
     }
     
+    // Load available credit notes for the practitioner
+    const ncSection = form.querySelector('#credit-note-section');
+    const ncList = form.querySelector('#nota-credito-list');
+    ncSection.style.display = 'none';
+    ncList.innerHTML = '';
+
+    try {
+        const ncRes = await makeRequest(`/caja/notas-credito/practicante/${this.practicante.id}`, 'GET', null, true);
+        const notes = ncRes.data || [];
+        if (notes.length > 0) {
+            ncSection.style.display = 'block';
+            
+            notes.forEach(note => {
+                const div = document.createElement('div');
+                div.className = 'form-check mb-1';
+                div.innerHTML = `
+                    <input class="form-check-input nc-checkbox" type="checkbox" value="${note.id}" id="nc-${note.id}" data-monto="${note.monto}">
+                    <label class="form-check-label" for="nc-${note.id}" style="font-size: 0.85rem;">
+                        ${note.descripcion} - <strong>$${parseFloat(note.monto).toFixed(2)}</strong>
+                    </label>
+                `;
+                ncList.appendChild(div);
+            });
+
+            // Recalculate when any checkbox changes
+            ncList.querySelectorAll('.nc-checkbox').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    this.calculateFinalAmount();
+                });
+            });
+        }
+    } catch (error) {
+        console.error('Error loading credit notes:', error);
+    }
+
     modal.style.display = 'block';
     this.updateAbonoDetails();
+  }
+
+  calculateFinalAmount() {
+    const form = this.container.querySelector('#payment-form');
+    const montoInput = form.querySelector('#monto-input');
+    const checkboxes = form.querySelectorAll('.nc-checkbox:checked');
+    const info = form.querySelector('#nc-info');
+
+    let totalNC = 0;
+    checkboxes.forEach(cb => {
+        totalNC += parseFloat(cb.dataset.monto);
+    });
+
+    const baseAmount = this.originalAmount || 0;
+    const finalAmount = Math.max(0, baseAmount - totalNC);
+    
+    if (montoInput) {
+        montoInput.value = finalAmount.toFixed(2);
+    }
+
+    if (totalNC > 0) {
+        info.textContent = `Se aplicará un descuento total de $${totalNC.toFixed(2)} (${checkboxes.length} notas).`;
+    } else {
+        info.textContent = '';
+    }
   }
 
   /**
@@ -1105,9 +1180,12 @@ export class PracticanteDetail {
                     
                     let acumulado = 0;
                     const saldosHistoricos = {};
+                    const totalNC = parseFloat(balanceData.total_notas_credito || 0);
+                    
                     for (const ap of abonoPagos) {
                         acumulado += parseFloat(ap.monto);
-                        saldosHistoricos[ap.id] = parseFloat(balanceData.monto_pactado || 0) - acumulado;
+                        // El saldo es: Pactado - (Efectivo Acumulado) - (Notas de Crédito totales del abono)
+                        saldosHistoricos[ap.id] = parseFloat(balanceData.monto_pactado || 0) - acumulado - totalNC;
                     }
                     
                     abonosMap.set(p.abono_id, {

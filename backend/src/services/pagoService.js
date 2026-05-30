@@ -155,6 +155,23 @@ export class PagoService {
             // Pass userId to create method for history
             const newPago = await Pago.create(pagoData, connection, userId);
 
+            // 5. Link Credit Notes if provided
+            if (extraData.nota_credito_ids && extraData.nota_credito_ids.length > 0) {
+                for (const ncId of extraData.nota_credito_ids) {
+                    const [rows] = await connection.execute(
+                        'SELECT id FROM MovimientoCaja WHERE id = ? AND practicante_id = ? AND usado_en_clase_id IS NULL AND usado_en_pago_id IS NULL AND deleted_at IS NULL',
+                        [ncId, practicanteId]
+                    );
+
+                    if (rows.length > 0) {
+                        await connection.execute(
+                            'UPDATE MovimientoCaja SET usado_en_pago_id = ? WHERE id = ?',
+                            [newPago.id, ncId]
+                        );
+                    }
+                }
+            }
+
             await connection.commit();
             return newPago;
         } catch (error) {
@@ -302,6 +319,12 @@ export class PagoService {
 
             // 1. Soft delete the payment
             const deleted = await Pago.delete(pagoId, connection, userId);
+
+            // 1b. Release associated credit notes
+            await connection.execute(
+                'UPDATE MovimientoCaja SET usado_en_pago_id = NULL WHERE usado_en_pago_id = ? AND deleted_at IS NULL',
+                [pagoId]
+            );
 
             // 2. Mark related abono as 'cancelado' if it exists
             if (pago.abono_id) {

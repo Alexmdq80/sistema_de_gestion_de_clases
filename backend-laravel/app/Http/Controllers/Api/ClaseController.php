@@ -163,6 +163,30 @@ class ClaseController extends Controller
                     }
                 }
 
+                // Logic for Practitioner Credit Notes
+                if ($clase->tipo === 'flexible' && $isBeingCancelledOrSuspended && $request->get('generar_nota_credito_practicante') == true) {
+                    $montoCreditoP = $request->get('monto_nota_credito_practicante') ?: 0;
+                    $practicantesIds = $request->get('practicantes_ids');
+
+                    if ($montoCreditoP > 0 && is_array($practicantesIds) && count($practicantesIds) > 0) {
+                        $labelEstado = ($data['estado'] == 'sin_actividad') ? 'Sin Actividad' : (($data['estado'] == 'cancelada') ? 'Cancelada' : 'Suspendida');
+                        $pId = $practicantesIds[0];
+                        $descripcionP = "Nota de Crédito para Practicante por Clase {$labelEstado} del {$clase->fecha->toDateString()} ({$clase->hora})";
+
+                        MovimientoCaja::create([
+                            'tipo' => 'ingreso',
+                            'monto' => $montoCreditoP,
+                            'categoria' => 'Nota de Crédito',
+                            'descripcion' => $descripcionP,
+                            'fecha' => $clase->fecha,
+                            'lugar_id' => $clase->lugar_id,
+                            'clase_id' => $clase->id,
+                            'practicante_id' => $pId,
+                            'usuario_id' => $userId
+                        ]);
+                    }
+                }
+
                 // Logic for reactivating class (delete credit note)
                 $isReactivating = !in_array($data['estado'] ?? 'realizada', ['cancelada', 'suspendida', 'sin_actividad']) && 
                                  in_array($clase->estado, ['cancelada', 'suspendida', 'sin_actividad']);

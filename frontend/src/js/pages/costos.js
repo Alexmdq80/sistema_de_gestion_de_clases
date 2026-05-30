@@ -526,6 +526,9 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
         let sumEgresosCuotas = 0;
 
         (this.pagosAbonos || []).forEach(p => {
+            // EXCLUDE 'Nota de Crédito' from financial sums to avoid duplication
+            if (p.tipo_abono_nombre === 'Nota de Crédito') return;
+
             const monto = Math.abs(parseFloat(p.monto));
             if (p.pago_tipo === 'ingreso') {
                 if (p.tipo_abono_nombre === 'Recepción Cuota Social' || !p.categoria) {
@@ -716,7 +719,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                         </thead>
                         <tbody>
                             ${(this.pagosAbonos || [])
-                                .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso')
+                                .filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso' && p.tipo_abono_nombre !== 'Nota de Crédito')
                                 .map(p => `
                                 <tr>
                                     <td>${formatDateDashes(p.fecha)}</td>
@@ -727,7 +730,7 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                                     <td class="text-right text-success font-weight-bold">$${parseFloat(p.monto).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
-                            ${this.pagosAbonos.length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No hay cobros de abonos en este periodo.</td></tr>' : ''}
+                            ${(this.pagosAbonos || []).filter(p => p.pago_tipo && p.pago_tipo.toLowerCase() === 'ingreso' && p.tipo_abono_nombre !== 'Nota de Crédito').length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No hay cobros de abonos en este periodo.</td></tr>' : ''}
                         </tbody>
                     </table>
                 </div>
@@ -748,26 +751,51 @@ const chargeSalonCheckbox = this.container.querySelector('#charge-salon-cost');
                             </tr>
                         </thead>
                         <tbody>
-                            ${this.movimientos.map(m => `
+                            ${this.movimientos.map(m => {
+                                const isNC = m.categoria === 'Nota de Crédito';
+                                const isPracticanteNC = isNC && m.practicante_id;
+                                const isUsed = m.usado_en_clase_id || m.usado_en_pago_id;
+                                
+                                let typeLabel = m.tipo.toUpperCase();
+                                let badgeClass = m.tipo === 'ingreso' ? 'badge-success' : 'badge-danger';
+                                let textClass = m.tipo === 'ingreso' ? 'text-success' : 'text-danger';
+
+                                if (isNC) {
+                                    if (isPracticanteNC) {
+                                        typeLabel = 'CRÉDITO PRACTICANTE';
+                                        badgeClass = 'badge-warning';
+                                        textClass = 'text-warning';
+                                    } else {
+                                        typeLabel = 'CRÉDITO SALÓN';
+                                        badgeClass = 'badge-info';
+                                        textClass = 'text-info';
+                                    }
+                                }
+
+                                return `
                                 <tr>
                                     <td>${formatDateDashes(m.fecha)}</td>
-                                    <td><span class="badge ${m.tipo === 'ingreso' ? 'badge-success' : 'badge-danger'}">${m.tipo.toUpperCase()}</span></td>
+                                    <td>
+                                        <span class="badge ${badgeClass}" style="${isPracticanteNC ? 'color: #856404; background-color: #ffeeba;' : ''}">
+                                            ${typeLabel}
+                                        </span>
+                                    </td>
                                     <td>
                                         ${m.categoria} 
-                                        ${m.usado_en_clase_id ? '<span class="badge badge-light border text-muted" title="Esta nota ya fue aplicada al pago de una clase" style="font-size: 0.65rem;">USADA</span>' : ''}
+                                        ${isUsed ? '<span class="badge badge-light border text-muted" title="Esta nota ya fue aplicada" style="font-size: 0.65rem;">USADA</span>' : ''}
                                     </td>
                                     <td><small>${m.descripcion || '-'}</small></td>
-                                    <td class="${m.tipo === 'ingreso' ? 'text-success' : 'text-danger'}"><strong>$${m.monto.toFixed(2)}</strong></td>
+                                    <td class="${textClass}" style="${isPracticanteNC ? 'color: #856404 !important; font-weight: bold;' : 'font-weight: bold;'}">$${m.monto.toFixed(2)}</td>
                                     <td class="text-right">
-                                        <button class="btn btn-sm ${m.usado_en_clase_id ? 'btn-light text-muted' : 'btn-outline-danger'} delete-mov-btn" 
+                                        <button class="btn btn-sm ${isUsed ? 'btn-light text-muted' : 'btn-outline-danger'} delete-mov-btn" 
                                             data-id="${m.id}" 
-                                            ${m.usado_en_clase_id ? 'disabled' : ''}
-                                            title="${m.usado_en_clase_id ? 'No se puede eliminar una nota ya usada' : 'Eliminar movimiento'}">
+                                            ${isUsed ? 'disabled' : ''}
+                                            title="${isUsed ? 'No se puede eliminar una nota ya usada' : 'Eliminar movimiento'}">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                             ${this.movimientos.length === 0 ? '<tr><td colspan="5" class="text-center text-muted">No hay movimientos extra en este periodo.</td></tr>' : ''}
                         </tbody>
                     </table>

@@ -211,6 +211,37 @@ router.put('/clases/:id', asyncHandler(async (req, res) => {
         }
     }
 
+    // NEW: If the class is flexible and is being cancelled or suspended, option to generate credit note for the practitioner
+    if (clase.tipo === 'flexible' && isBeingCancelledOrSuspended && data.generar_nota_credito_practicante === true) {
+        // Find the amount paid for the abono or a suggested amount
+        // In flexible classes, they usually pay for a set of sessions. 
+        // We'll use the provided amount or 0 (user must provide it via UI)
+        const montoCreditoP = data.monto_nota_credito_practicante !== undefined ? parseFloat(data.monto_nota_credito_practicante) : 0;
+        
+        if (montoCreditoP > 0 && data.practicantes_ids && data.practicantes_ids.length > 0) {
+            const labelEstado = data.estado === 'sin_actividad' ? 'Sin Actividad' : (data.estado === 'cancelada' ? 'Cancelada' : 'Suspendida');
+            const pId = data.practicantes_ids[0]; // For flexible, we expect one practitioner typically or we take the first
+            
+            let descripcionP = `Nota de Crédito para Practicante por Clase ${labelEstado} del ${clase.fecha} (${clase.hora})`;
+            if (data.observaciones || clase.observaciones) {
+                const obs = data.observaciones !== undefined ? data.observaciones : clase.observaciones;
+                if (obs) descripcionP += ` - Obs: ${obs}`;
+            }
+
+            await MovimientoCaja.create({
+                tipo: 'ingreso',
+                monto: montoCreditoP,
+                categoria: 'Nota de Crédito',
+                descripcion: descripcionP,
+                fecha: clase.fecha,
+                lugar_id: clase.lugar_id,
+                clase_id: clase.id,
+                practicante_id: pId,
+                usuario_id: userId
+            });
+        }
+    }
+
     // NEW: If the class is being un-cancelled or un-suspended, remove associated credit note
     const isReactivating = !['cancelada', 'suspendida', 'sin_actividad'].includes(data.estado) && ['cancelada', 'suspendida', 'sin_actividad'].includes(clase.estado);
     if (isReactivating) {

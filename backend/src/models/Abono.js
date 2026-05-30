@@ -137,21 +137,35 @@ export class Abono {
      * @param {Object} [connection] - Database connection
      * @returns {Promise<Object>}
      */
-    static async getBalance(id, connection = null) {
+    static async getBalance(id) {
         const sql = `
             SELECT 
                 a.monto_pactado,
                 a.estado,
                 IFNULL(SUM(p.monto), 0) as total_pagado,
-                (IFNULL(a.monto_pactado, 0) - IFNULL(SUM(p.monto), 0)) as saldo_pendiente
+                (
+                    SELECT IFNULL(SUM(m.monto), 0) 
+                    FROM MovimientoCaja m 
+                    JOIN Pago p2 ON m.usado_en_pago_id = p2.id 
+                    WHERE p2.abono_id = a.id AND m.deleted_at IS NULL AND p2.deleted_at IS NULL
+                ) as total_notas_credito,
+                (
+                    IFNULL(a.monto_pactado, 0) - 
+                    IFNULL(SUM(p.monto), 0) - 
+                    (
+                        SELECT IFNULL(SUM(m.monto), 0) 
+                        FROM MovimientoCaja m 
+                        JOIN Pago p2 ON m.usado_en_pago_id = p2.id 
+                        WHERE p2.abono_id = a.id AND m.deleted_at IS NULL AND p2.deleted_at IS NULL
+                    )
+                ) as saldo_pendiente
             FROM Abono a
             LEFT JOIN Pago p ON a.id = p.abono_id AND p.deleted_at IS NULL
             WHERE a.id = ?
-            GROUP BY a.id
+            GROUP BY a.id, a.monto_pactado, a.estado
         `;
-        const executor = connection || pool;
-        const [rows] = await executor.execute(sql, [id]);
-        return rows.length ? rows[0] : { monto_pactado: 0, total_pagado: 0, saldo_pendiente: 0, estado: 'activo' };
+        const [rows] = await pool.execute(sql, [id]);
+        return rows.length ? rows[0] : { monto_pactado: 0, total_pagado: 0, total_notas_credito: 0, saldo_pendiente: 0, estado: 'activo' };
     }
 
     /**

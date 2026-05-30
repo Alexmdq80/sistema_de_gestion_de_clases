@@ -215,8 +215,10 @@ export class PagosPage {
       const summaryContainer = this.container.querySelector('#pagos-summary');
       if (!summaryContainer) return;
 
+      // EXCLUDE 'Nota de Crédito' from totals because it's virtual money 
+      // already counted in original payments.
       const totalIngresos = this.pagos
-        .filter(p => parseFloat(p.monto) > 0)
+        .filter(p => parseFloat(p.monto) > 0 && p.tipo_abono_nombre !== 'Nota de Crédito')
         .reduce((sum, p) => sum + parseFloat(p.monto), 0);
       
       const totalEgresos = this.pagos
@@ -303,7 +305,11 @@ export class PagosPage {
               </td>
               <td>${formatDateReadable(pago.fecha)}</td>
               <td>${vencimientoHtml}</td>
-              <td>${pago.metodo_pago || '-'}</td>
+              <td>
+                ${pago.metodo_pago === 'nota_credito' ? 
+                  '<span class="badge badge-info" style="font-size: 0.75rem;"><i class="fas fa-ticket-alt"></i> N/C</span>' : 
+                  this.escapeHtml(pago.metodo_pago || '-')}
+              </td>
               <td>
                 ${isEgreso ? 
                   '<small class="text-muted italic">Gestionar en Costos</small>' : 

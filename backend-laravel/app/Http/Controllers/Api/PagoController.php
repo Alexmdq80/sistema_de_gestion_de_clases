@@ -86,10 +86,41 @@ class PagoController extends Controller
                 'practicante_nombre' => $ps->socio->practicante->nombre_completo,
                 'lugar_nombre' => $ps->socio->lugar->nombre,
             ];
-        })->filter()->values();
+        })->filter();
+
+        // 3. Other movements (MovimientoCaja)
+        $queryCaja = MovimientoCaja::with(['practicante', 'lugar']);
+        if ($fechaInicio && $fechaFin) {
+            $queryCaja->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+        }
+        if ($lugarId && $lugarId !== 'all') {
+            $queryCaja->where(function($q) use ($lugarId) {
+                $q->where('lugar_id', $lugarId)
+                  ->orWhereHas('lugar', fn($sq) => $sq->where('parent_id', $lugarId));
+            });
+        }
+
+        $otherMovements = $queryCaja->orderBy('fecha', 'desc')->get()->map(function($m) {
+            return [
+                'id' => $m->id * -5000,
+                'practicante_id' => $m->practicante_id,
+                'pago_socio_id' => null,
+                'mes_abono' => null, // Opcional: calcular mes/año como en Node
+                'lugar_id' => $m->lugar_id,
+                'fecha' => $m->fecha->toDateString(),
+                'monto' => $m->tipo === 'egreso' ? $m->monto * -1 : $m->monto,
+                'metodo_pago' => $m->categoria === 'Nota de Crédito' ? 'nota_credito' : 'efectivo',
+                'notas' => $m->descripcion,
+                'pago_tipo' => $m->tipo,
+                'tipo_abono_nombre' => $m->categoria,
+                'categoria' => null,
+                'practicante_nombre' => $m->practicante ? $m->practicante->nombre_completo : 'Global',
+                'lugar_nombre' => $m->lugar ? $m->lugar->nombre : 'N/A',
+            ];
+        });
 
         // Merge and return
-        $data = $incomes->concat($expenses)->sortByDesc('fecha')->values();
+        $data = $incomes->concat($expenses)->concat($otherMovements)->sortByDesc('fecha')->values();
 
         return response()->json(['data' => $data]);
     }
@@ -117,6 +148,9 @@ class PagoController extends Controller
 
             // 1. Soft delete del pago
             $pago->delete();
+
+            // 1b. Liberar notas de crédito asociadas
+            MovimientoCaja::where('usado_en_pago_id', $pago->id)->update(['usado_en_pago_id' => null]);
 
             // 2. Si está vinculado a un Abono, marcar abono como cancelado
             if ($pago->abono_id) {
@@ -188,7 +222,10 @@ class PagoController extends Controller
             'fecha_vencimiento' => 'nullable|date',
             'mes_abono' => 'nullable|string',
             'lugar_id' => 'nullable|exists:Lugar,id',
-            'notas' => 'nullable|string'
+            'notas' => 'nullable|string',
+            'nota_credito_id' => 'nullable|exists:MovimientoCaja,id',
+            'nota_credito_ids' => 'nullable|array',
+            'nota_credito_ids.*' => 'exists:MovimientoCaja,id'
         ]);
 
         return DB::transaction(function () use ($request, $id) {
@@ -257,6 +294,17 @@ class PagoController extends Controller
                 'metodo_pago' => $request->metodo_pago,
                 'notas' => $request->notas
             ]);
+
+            // 5. Aplicar Notas de Crédito si existen
+            $notaIds = $request->nota_credito_ids ?: ($request->nota_credito_id ? [$request->nota_credito_id] : []);
+            
+            if (count($notaIds) > 0) {
+                MovimientoCaja::whereIn('id', $notaIds)
+                    ->where('practicante_id', $id)
+                    ->whereNull('usado_en_pago_id')
+                    ->whereNull('usado_en_clase_id')
+                    ->update(['usado_en_pago_id' => $pago->id]);
+            }
 
             return response()->json([
                 'message' => 'Pago registrado correctamente',

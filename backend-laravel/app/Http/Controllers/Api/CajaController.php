@@ -52,6 +52,21 @@ class CajaController extends Controller
         $notas = MovimientoCaja::where('categoria', 'Nota de Crédito')
             ->where('lugar_id', $lugarId)
             ->whereNull('usado_en_clase_id')
+            ->whereNull('usado_en_pago_id')
+            ->get();
+
+        return response()->json(['data' => $notas]);
+    }
+
+    /**
+     * Devuelve las notas de crédito disponibles (sin usar) para un practicante específico.
+     */
+    public function notasCreditoPracticante($practicanteId)
+    {
+        $notas = MovimientoCaja::where('categoria', 'Nota de Crédito')
+            ->where('practicante_id', $practicanteId)
+            ->whereNull('usado_en_pago_id')
+            ->whereNull('usado_en_clase_id')
             ->get();
 
         return response()->json(['data' => $notas]);
@@ -123,9 +138,9 @@ class CajaController extends Controller
     {
         $movimiento = MovimientoCaja::findOrFail($id);
 
-        if ($movimiento->usado_en_clase_id) {
+        if ($movimiento->usado_en_clase_id || $movimiento->usado_en_pago_id) {
             return response()->json([
-                'error' => 'No se puede eliminar una Nota de Crédito que ya ha sido aplicada al pago de una clase. Primero debe anular el pago en la clase correspondiente.'
+                'error' => 'No se puede eliminar una Nota de Crédito que ya ha sido aplicada al pago de una clase o abono. Primero debe anular el pago correspondiente.'
             ], 400);
         }
 

@@ -177,7 +177,7 @@ export class Pago {
                     m.lugar_id, 
                     m.fecha, 
                     CASE WHEN m.tipo = 'egreso' THEN m.monto * -1 ELSE m.monto END as monto, 
-                    'efectivo' as metodo_pago, 
+                    CASE WHEN m.categoria = 'Nota de Crédito' THEN 'nota_credito' ELSE 'efectivo' END as metodo_pago, 
                     m.descripcion as notas, 
                     m.deleted_at, m.created_at, m.updated_at,
                     m.categoria as tipo_abono_nombre, 

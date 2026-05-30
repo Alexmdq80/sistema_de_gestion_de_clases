@@ -42,7 +42,16 @@ router.get('/', asyncHandler(async (req, res) => {
             -- Outstanding balances from Abono table
             SELECT 
                 a.id, a.practicante_id, 
-                (IFNULL(a.monto_pactado, 0) - IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0)) as monto,
+                (
+                    IFNULL(a.monto_pactado, 0) - 
+                    IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0) -
+                    IFNULL((
+                        SELECT SUM(m.monto) 
+                        FROM MovimientoCaja m 
+                        JOIN Pago p2 ON m.usado_en_pago_id = p2.id 
+                        WHERE p2.abono_id = a.id AND m.deleted_at IS NULL AND p2.deleted_at IS NULL
+                    ), 0)
+                ) as monto,
                 CONCAT('Saldo Abono: ', ta.nombre, IF(a.mes_abono IS NOT NULL, CONCAT(' (', a.mes_abono, ')'), '')) as concepto,
                 a.fecha_inicio as fecha,
                 CASE WHEN a.estado = 'cancelado' THEN 'cancelada' ELSE 'pendiente' END as estado,
