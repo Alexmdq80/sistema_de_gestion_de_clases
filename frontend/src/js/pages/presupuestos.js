@@ -393,7 +393,62 @@ export class PresupuestosPage {
     closePracticanteModal() { this.container.querySelector('#modal-select-practicante').style.display = 'none'; }
     async openAttendanceModal() { this.container.querySelector('#modal-asistencia').style.display = 'flex'; this.container.querySelector('#asistencia-practicante-name').textContent = this.state.cliente; this.state.selectedAsistenciaIds.clear(); this.updateConfirmButton(); await this.loadAsistenciaData(); }
     async loadAsistenciaData() { const body = this.container.querySelector('#asistencia-items'); body.innerHTML = '<tr><td colspan="6" class="text-center py-5"><i class="fas fa-spinner fa-spin"></i></td></tr>'; try { const p = { fecha_inicio: this.container.querySelector('#modal-filter-desde').value, fecha_fin: this.container.querySelector('#modal-filter-hasta').value, tipo: this.container.querySelector('#modal-filter-tipo').value }; const res = await apiClient.get(`/asistencia/practicante/${this.state.practicanteId}`, p); this.state.asistencia = res.data || []; this.renderAsistenciaItems(); } catch (e) { body.innerHTML = '<tr><td colspan="6">Error.</td></tr>'; } }
-    renderAsistenciaItems() { const body = this.container.querySelector('#asistencia-items'); const filt = this.state.asistencia.filter(a => (a.clase_estado === 'programada' && !a.pago_espacio_realizado) || ((a.clase_estado === 'cancelada' || a.clase_estado === 'suspendida') && a.pago_espacio_realizado)); if (filt.length === 0) { body.innerHTML = '<tr><td colspan="6" class="text-center py-5">No hay clases.</td></tr>'; return; } const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']; body.innerHTML = filt.map(a => { const fechaLimpia = (typeof a.fecha === 'string' && a.fecha.includes('T')) ? a.fecha.split('T')[0] : a.fecha; const [y, m, d] = fechaLimpia.split('-'); const fechaObj = new Date(y, m - 1, d); const nombreDia = diasSemana[fechaObj.getDay()]; const esCred = a.clase_estado !== 'programada'; return `<tr class="${esCred ? 'table-warning' : ''}"><td class="text-center align-middle"><input type="checkbox" class="check-asistencia" data-id="${a.clase_id}" ${this.state.selectedAsistenciaIds.has(a.clase_id) ? 'checked' : ''}></td><td class="align-middle"><div class="font-weight-bold">${nombreDia} ${d}/${m}/${y}</div><div class="small text-muted"><i class="far fa-clock mr-1"></i>${a.hora.substring(0, 5)} hs</div></td><td class="align-middle">${a.actividad_nombre} ${!a.ya_anotado ? '<span class="badge badge-light border ml-1">No anotado</span>' : ''}</td><td class="align-middle small">${a.lugar_nombre}</td><td class="align-middle text-center"><span class="badge ${esCred ? 'badge-danger' : 'badge-primary'}">${esCred ? 'CRÉDITO' : 'Programada'}</span></td><td class="align-middle"><span class="badge ${a.clase_tipo === 'flexible' ? 'badge-info' : 'badge-secondary'}">${a.clase_tipo === 'flexible' ? 'Particular' : 'Grupal'}</span></td></tr>`; }).join(''); body.querySelectorAll('.check-asistencia').forEach(x => x.onchange = (e) => { const id = parseInt(x.dataset.id); if (e.target.checked) this.state.selectedAsistenciaIds.add(id); else this.state.selectedAsistenciaIds.delete(id); this.updateConfirmButton(); }); }
+    renderAsistenciaItems() {
+        const body = this.container.querySelector('#asistencia-items');
+        const filt = this.state.asistencia.filter(a => 
+            (a.clase_estado === 'programada' && !a.pago_espacio_realizado) || 
+            ((a.clase_estado === 'cancelada' || a.clase_estado === 'suspendida') && a.pago_espacio_realizado)
+        );
+
+        if (filt.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" class="text-center py-5">No hay clases.</td></tr>';
+            return;
+        }
+
+        const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        body.innerHTML = filt.map(a => {
+            const fechaLimpia = (typeof a.fecha === 'string' && a.fecha.includes('T')) ? a.fecha.split('T')[0] : a.fecha;
+            const [y, m, d] = fechaLimpia.split('-');
+            const fechaObj = new Date(y, m - 1, d);
+            const nombreDia = diasSemana[fechaObj.getDay()];
+            const esCred = a.clase_estado !== 'programada';
+            
+            const hasNC = a.nota_credito_practicante_id !== null && a.nota_credito_practicante_id !== undefined;
+            const badgeNC = hasNC ? `<span class="badge badge-success ml-1" title="Se generó una nota de crédito por $${a.nota_credito_practicante_monto}"><i class="fas fa-check"></i> NC</span>` : '';
+
+            return `
+                <tr class="${esCred ? 'table-warning' : ''}">
+                    <td class="text-center align-middle">
+                        <input type="checkbox" class="check-asistencia" data-id="${a.clase_id}" ${this.state.selectedAsistenciaIds.has(a.clase_id) ? 'checked' : ''}>
+                    </td>
+                    <td class="align-middle">
+                        <div class="font-weight-bold">${nombreDia} ${d}/${m}/${y}</div>
+                        <div class="small text-muted"><i class="far fa-clock mr-1"></i>${a.hora.substring(0, 5)} hs</div>
+                    </td>
+                    <td class="align-middle">
+                        ${a.actividad_nombre} ${!a.ya_anotado ? '<span class="badge badge-light border ml-1">No anotado</span>' : ''}
+                    </td>
+                    <td class="align-middle small">${a.lugar_nombre}</td>
+                    <td class="align-middle text-center">
+                        <span class="badge ${esCred ? 'badge-danger' : 'badge-primary'}">${esCred ? 'CRÉDITO' : 'Programada'}</span>
+                        ${esCred ? badgeNC : ''}
+                    </td>
+                    <td class="align-middle">
+                        <span class="badge ${a.clase_tipo === 'flexible' ? 'badge-info' : 'badge-secondary'}">
+                            ${a.clase_tipo === 'flexible' ? 'Particular' : 'Grupal'}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        body.querySelectorAll('.check-asistencia').forEach(x => x.onchange = (e) => {
+            const id = parseInt(x.dataset.id);
+            if (e.target.checked) this.state.selectedAsistenciaIds.add(id);
+            else this.state.selectedAsistenciaIds.delete(id);
+            this.updateConfirmButton();
+        });
+    }
     updateConfirmButton() { const b = this.container.querySelector('#btn-confirm-asistencia'); b.disabled = this.state.selectedAsistenciaIds.size === 0; b.textContent = `Agregar Seleccionadas (${this.state.selectedAsistenciaIds.size})`; }
     closeAsistenciaModal() { this.container.querySelector('#modal-asistencia').style.display = 'none'; }
     confirmAsistencia() { const sel = this.state.asistencia.filter(a => this.state.selectedAsistenciaIds.has(a.clase_id)); const groups = {}; sel.forEach(a => { const isCred = a.clase_estado !== 'programada'; const k = `${a.actividad_nombre} (${a.lugar_nombre})${isCred ? ' [CRÉDITO]' : ''}`; if (!groups[k]) groups[k] = { count: 0, dates: [], totalRef: 0, obs: [], isCred }; groups[k].count++; groups[k].dates.push(this.formatDateShort(a.fecha)); if (a.monto_referencia_espacio) groups[k].totalRef += parseFloat(a.monto_referencia_espacio); if (a.clase_observaciones) groups[k].obs.push(a.clase_observaciones); }); if (this.state.items.length === 1 && !this.state.items[0].descripcion && this.state.items[0].precio === 0) this.state.items = []; Object.keys(groups).forEach(k => { const g = groups[k]; let desc = `${k}\nSesiones: ${g.dates.join(', ')}`; if (g.obs.length > 0) desc += `\nNotas: ${[...new Set(g.obs)].join('; ')}`; const precioSugerido = g.isCred ? -(g.totalRef / g.count) : (g.totalRef / g.count); this.state.items.push({ id: Date.now() + Math.random(), descripcion: desc, cantidad: g.count, precio: precioSugerido || 0, abonoId: '' }); }); this.renderItems(); this.calculate(); this.closeAsistenciaModal(); showSuccess('Importado.'); }

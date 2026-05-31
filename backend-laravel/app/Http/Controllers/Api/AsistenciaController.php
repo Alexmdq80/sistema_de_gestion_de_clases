@@ -26,7 +26,7 @@ class AsistenciaController extends Controller
     {
         // Esta lógica es para ver el historial de un alumno
         // Incluye clases donde está anotado o clases flexibles disponibles
-        $query = Clase::with(['actividad', 'lugar'])
+        $query = Clase::query()
             ->leftJoin('Asistencia', function($join) use ($id) {
                 $join->on('Clase.id', '=', 'Asistencia.clase_id')
                      ->where('Asistencia.practicante_id', '=', $id);
@@ -37,11 +37,26 @@ class AsistenciaController extends Controller
                      ->where('InscripcionHorario.practicante_id', '=', $id)
                      ->where('InscripcionHorario.activo', '=', 1);
             })
+            ->leftJoin('Actividad', 'Clase.actividad_id', '=', 'Actividad.id')
+            ->leftJoin('Lugar', 'Clase.lugar_id', '=', 'Lugar.id')
             ->select(
-                'Clase.*', 
+                'Clase.id as clase_id',
+                'Clase.fecha',
+                'Clase.hora',
+                'Clase.hora_fin',
+                'Clase.tipo as clase_tipo',
+                'Clase.estado as clase_estado',
+                'Clase.observaciones as clase_observaciones',
+                'Clase.pago_espacio_realizado',
+                'Clase.monto_referencia_espacio',
+                'Clase.monto_pago_espacio',
+                'Actividad.nombre as actividad_nombre',
+                'Lugar.nombre as lugar_nombre',
                 'Asistencia.id as asistencia_id', 
                 'Asistencia.asistio',
-                DB::raw('IF(Asistencia.id IS NOT NULL OR InscripcionHorario.id IS NOT NULL, 1, 0) as ya_anotado')
+                DB::raw('IF(Asistencia.id IS NOT NULL OR InscripcionHorario.id IS NOT NULL, 1, 0) as ya_anotado'),
+                DB::raw('(SELECT id FROM MovimientoCaja WHERE clase_id = Clase.id AND practicante_id = ' . (int)$id . ' AND categoria = "Nota de Crédito" AND deleted_at IS NULL LIMIT 1) as nota_credito_practicante_id'),
+                DB::raw('(SELECT monto FROM MovimientoCaja WHERE clase_id = Clase.id AND practicante_id = ' . (int)$id . ' AND categoria = "Nota de Crédito" AND deleted_at IS NULL LIMIT 1) as nota_credito_practicante_monto')
             )
             ->whereNull('Clase.deleted_at')
             ->where(function($q) {
@@ -66,7 +81,7 @@ class AsistenciaController extends Controller
         // Importante: Si filtramos por InscripcionHorario, pueden salir duplicados si hay varias 
         // inscripciones (históricas vs actuales), pero el WHERE activo=1 y el LEFT JOIN deberían limitarlo.
         // Agrupamos por ID de clase para estar seguros.
-        $results = $query->groupBy('Clase.id')
+        $results = $query->groupBy('clase_id')
                         ->orderBy('Clase.fecha', 'desc')
                         ->orderBy('Clase.hora', 'desc')
                         ->get();

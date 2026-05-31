@@ -47,7 +47,9 @@ export class Asistencia {
                 c.monto_referencia_espacio,
                 c.monto_pago_espacio,
                 act.nombre as actividad_nombre,
-                l.nombre as lugar_nombre
+                l.nombre as lugar_nombre,
+                (SELECT id FROM MovimientoCaja WHERE clase_id = c.id AND practicante_id = ${parseInt(practicanteId, 10)} AND categoria = 'Nota de Crédito' AND deleted_at IS NULL LIMIT 1) as nota_credito_practicante_id,
+                (SELECT monto FROM MovimientoCaja WHERE clase_id = c.id AND practicante_id = ${parseInt(practicanteId, 10)} AND categoria = 'Nota de Crédito' AND deleted_at IS NULL LIMIT 1) as nota_credito_practicante_monto
             FROM Clase c
             LEFT JOIN Asistencia a ON c.id = a.clase_id AND a.practicante_id = ?
             LEFT JOIN InscripcionHorario ih ON c.horario_id = ih.horario_id AND ih.practicante_id = ? AND ih.activo = 1
