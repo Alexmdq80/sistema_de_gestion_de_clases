@@ -127,6 +127,16 @@ export class AsistenciaMarker {
                                     ` : ''}
 
                                     ${c.tipo === 'flexible' ? `
+                                        <div id="mark-as-used-group" class="mt-3 p-2 border rounded bg-white" style="border-color: #6c757d !important;">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="marcar-como-usada" ${c.asistentes_count > 0 ? 'checked' : ''}>
+                                                <label class="form-check-label font-weight-bold" for="marcar-como-usada">
+                                                    ¿Marcar clase como "usada"?
+                                                </label>
+                                            </div>
+                                            <small class="text-muted">Si se marca como usada, se descontará del saldo del alumno aunque la clase esté cancelada/suspendida.</small>
+                                        </div>
+
                                         <div id="nota-credito-practicante-group" class="mt-3 p-2 border rounded bg-white" style="border-color: #17a2b8 !important;">
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" id="generar-nota-credito-practicante">
@@ -266,12 +276,20 @@ export class AsistenciaMarker {
             // Toggle checkboxes and alert dynamically
             const checkboxes = this.container.querySelectorAll('.attendance-checkbox');
             const isInactive = currentEstado === 'cancelada' || currentEstado === 'suspendida' || currentEstado === 'sin_actividad';
+            
+            // Si es flexible y está inactiva, mostramos opción de marcar como usada
+            const markAsUsedGroup = this.container.querySelector('#mark-as-used-group');
+            if (markAsUsedGroup) {
+                markAsUsedGroup.style.display = isInactive ? 'block' : 'none';
+            }
+
             const canModify = c.tipo === 'grupal' 
                 ? (currentEstado === 'realizada') 
                 : (currentEstado === 'programada' || currentEstado === 'realizada');
                 
             checkboxes.forEach(cb => {
-                if (isInactive) cb.checked = false;
+                // Para grupales, si se cancela se desmarcan todos
+                if (c.tipo === 'grupal' && isInactive) cb.checked = false;
                 cb.disabled = !canModify;
             });
             alertBox.style.display = canModify ? 'none' : 'block';
@@ -288,23 +306,43 @@ export class AsistenciaMarker {
         const ncPracticanteCheckbox = this.container.querySelector('#generar-nota-credito-practicante');
         if (ncPracticanteCheckbox) {
             ncPracticanteCheckbox.addEventListener('change', () => {
-                this.container.querySelector('#monto-nota-credito-practicante-container').style.display = ncPracticanteCheckbox.checked ? 'block' : 'none';
+                const container = this.container.querySelector('#monto-nota-credito-practicante-container');
+                const markAsUsedCb = this.container.querySelector('#marcar-como-usada');
+                
+                container.style.display = ncPracticanteCheckbox.checked ? 'block' : 'none';
+                
+                // Si se genera NC, forzamos que se marque como usada (lógica de balance)
+                if (ncPracticanteCheckbox.checked && markAsUsedCb) {
+                    markAsUsedCb.checked = true;
+                }
             });
         }
 
         this.container.querySelector('#save-attendance-btn').addEventListener('click', async () => {
             const updates = [];
             const practicantes_ids = [];
+            
+            const estado = estadoSelect.value;
+            const isInactive = estado === 'cancelada' || estado === 'suspendida' || estado === 'sin_actividad';
+            const markAsUsedCb = this.container.querySelector('#marcar-como-usada');
+            const shouldMarkAsUsed = markAsUsedCb ? markAsUsedCb.checked : false;
+
             this.container.querySelectorAll('.attendance-checkbox').forEach(cb => {
                 const pId = parseInt(cb.getAttribute('data-id'), 10);
+                
+                let asistio = cb.checked ? 1 : 0;
+                // Si es flexible, está inactiva pero el usuario pidió marcarla como usada, forzamos asistio = 1
+                if (c.tipo === 'flexible' && isInactive && shouldMarkAsUsed) {
+                    asistio = 1;
+                }
+
                 updates.push({
                     practicante_id: pId,
-                    asistio: cb.checked ? 1 : 0
+                    asistio: asistio
                 });
                 practicantes_ids.push(pId);
             });
 
-            const estado = estadoSelect.value;
             const profesor_id = this.container.querySelector('#clase-profesor').value;
             const observaciones = this.container.querySelector('#clase-observaciones').value;
             const motivo_cancelacion = this.container.querySelector('#motivo-cancelacion') ? this.container.querySelector('#motivo-cancelacion').value : '';

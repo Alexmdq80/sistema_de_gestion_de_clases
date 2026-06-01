@@ -216,6 +216,7 @@ class PagoController extends Controller
         $request->validate([
             'tipo_abono_id' => 'required|exists:TipoAbono,id',
             'monto' => 'required|numeric|min:0',
+            'monto_pactado' => 'nullable|numeric|min:0',
             'metodo_pago' => 'required|string',
             'cantidad' => 'integer|min:1',
             'fecha_pago' => 'nullable|date',
@@ -271,7 +272,7 @@ class PagoController extends Controller
                 'lugar_id' => $request->lugar_id ?: $tipoAbono->lugar_id,
                 'estado' => 'activo',
                 'cantidad' => $cantidad,
-                'monto_pactado' => $request->monto // En la ficha el usuario ya envía el monto total
+                'monto_pactado' => $request->monto_pactado ?? ($tipoAbono->precio * $cantidad)
             ]);
 
             // Registrar historial del Abono
@@ -299,11 +300,53 @@ class PagoController extends Controller
             $notaIds = $request->nota_credito_ids ?: ($request->nota_credito_id ? [$request->nota_credito_id] : []);
             
             if (count($notaIds) > 0) {
-                MovimientoCaja::whereIn('id', $notaIds)
-                    ->where('practicante_id', $id)
-                    ->whereNull('usado_en_pago_id')
-                    ->whereNull('usado_en_clase_id')
-                    ->update(['usado_en_pago_id' => $pago->id]);
+                // Determine how much NC value we should actually consume
+                $targetTotal = $request->monto_pactado ?? ($tipoAbono->precio * $cantidad);
+                $remainingToCover = max(0, $targetTotal - (float)$request->monto);
+
+                foreach ($notaIds as $ncId) {
+                    $nc = MovimientoCaja::where('id', $ncId)
+                        ->where('practicante_id', $id)
+                        ->whereNull('usado_en_pago_id')
+                        ->whereNull('usado_en_clase_id')
+                        ->first();
+
+                    if ($nc) {
+                        if ($nc->monto <= $remainingToCover + 0.01) {
+                            // Use full NC
+                            $nc->update(['usado_en_pago_id' => $pago->id]);
+                            $remainingToCover -= $nc->monto;
+                        } else {
+                            // Split NC: Use only what's needed
+                            $amountToUse = $remainingToCover;
+                            $remainder = $nc->monto - $amountToUse;
+                            $oldMonto = $nc->monto;
+
+                            // 1. Update original to the amount used and mark as used
+                            $nc->update([
+                                'monto' => $amountToUse,
+                                'usado_en_pago_id' => $pago->id,
+                                'descripcion' => ($nc->descripcion ?: '') . " (Uso parcial de $" . number_format($oldMonto, 2) . ")"
+                            ]);
+
+                            // 2. Create new NC for the remainder
+                            MovimientoCaja::create([
+                                'tipo' => $nc->tipo,
+                                'monto' => $remainder,
+                                'categoria' => $nc->categoria,
+                                'descripcion' => "Saldo restante de NC #{$nc->id} (Original: $" . number_format($oldMonto, 2) . ")",
+                                'fecha' => $nc->fecha,
+                                'lugar_id' => $nc->lugar_id,
+                                'practicante_id' => $nc->practicante_id,
+                                'usuario_id' => $userId
+                            ]);
+
+                            $remainingToCover = 0;
+                        }
+                    }
+
+                    if ($remainingToCover <= 0) break;
+                }
             }
 
             return response()->json([

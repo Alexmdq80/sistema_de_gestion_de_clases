@@ -157,18 +157,61 @@ export class PagoService {
 
             // 5. Link Credit Notes if provided
             if (extraData.nota_credito_ids && extraData.nota_credito_ids.length > 0) {
+                // Determine how much NC value we should actually consume
+                // If monto_pactado was provided, we target that balance. 
+                // If not, we target the default (tipoAbono.precio * cantidad)
+                const targetTotal = extraData.monto_pactado !== undefined ? parseFloat(extraData.monto_pactado) : (tipoAbono.precio || 0) * cantidad;
+                let remainingToCover = Math.max(0, targetTotal - parseFloat(extraData.monto || 0));
+
                 for (const ncId of extraData.nota_credito_ids) {
                     const [rows] = await connection.execute(
-                        'SELECT id FROM MovimientoCaja WHERE id = ? AND practicante_id = ? AND usado_en_clase_id IS NULL AND usado_en_pago_id IS NULL AND deleted_at IS NULL',
+                        'SELECT * FROM MovimientoCaja WHERE id = ? AND practicante_id = ? AND usado_en_clase_id IS NULL AND usado_en_pago_id IS NULL AND deleted_at IS NULL',
                         [ncId, practicanteId]
                     );
 
                     if (rows.length > 0) {
-                        await connection.execute(
-                            'UPDATE MovimientoCaja SET usado_en_pago_id = ? WHERE id = ?',
-                            [newPago.id, ncId]
-                        );
+                        const nc = rows[0];
+                        const ncMonto = parseFloat(nc.monto);
+
+                        if (ncMonto <= remainingToCover + 0.01) {
+                            // Use full NC
+                            await connection.execute(
+                                'UPDATE MovimientoCaja SET usado_en_pago_id = ? WHERE id = ?',
+                                [newPago.id, ncId]
+                            );
+                            remainingToCover -= ncMonto;
+                        } else {
+                            // Split NC: Use only what's needed
+                            const amountToUse = remainingToCover;
+                            const remainder = ncMonto - amountToUse;
+
+                            // 1. Update original to the amount used and mark as used
+                            await connection.execute(
+                                'UPDATE MovimientoCaja SET monto = ?, usado_en_pago_id = ?, descripcion = CONCAT(IFNULL(descripcion, ""), " (Uso parcial de $", ?, ")") WHERE id = ?',
+                                [amountToUse, newPago.id, ncMonto.toFixed(2), ncId]
+                            );
+
+                            // 2. Create new NC for the remainder
+                            await connection.execute(
+                                `INSERT INTO MovimientoCaja (tipo, monto, categoria, descripcion, fecha, lugar_id, practicante_id, usuario_id)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                                [
+                                    nc.tipo,
+                                    remainder,
+                                    nc.categoria,
+                                    `Saldo restante de NC #${ncId} (Original: $${ncMonto.toFixed(2)})`,
+                                    nc.fecha,
+                                    nc.lugar_id,
+                                    nc.practicante_id,
+                                    userId
+                                ]
+                            );
+                            
+                            remainingToCover = 0;
+                        }
                     }
+                    
+                    if (remainingToCover <= 0) break; // Covered everything needed
                 }
             }
 

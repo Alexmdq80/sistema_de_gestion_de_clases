@@ -11,7 +11,7 @@ export class PresupuestosPage {
             cliente: '',
             practicanteId: null,
             fecha: new Date().toISOString().split('T')[0],
-            items: [{ id: Date.now(), descripcion: '', cantidad: 1, precio: 0, abonoId: '' }],
+            items: [{ id: Date.now(), descripcion: '', cantidad: 1, precioBase: 0, descuento: 0, precio: 0, abonoId: '' }],
             observaciones: '',
             asistencia: [],
             selectedAsistenciaIds: new Set(),
@@ -82,17 +82,29 @@ export class PresupuestosPage {
                     <table class="table table-bordered table-hover">
                         <thead class="bg-light">
                             <tr>
-                                <th style="width: 45%;">Descripción / Concepto</th>
-                                <th style="width: 15%;" class="text-center">Cantidad</th>
-                                <th style="width: 20%;" class="text-right">Precio Unit.</th>
+                                <th style="width: 35%;">Descripción / Concepto</th>
+                                <th style="width: 10%;" class="text-center">Cant.</th>
+                                <th style="width: 15%;" class="text-right">Precio Base</th>
+                                <th style="width: 10%;" class="text-right">Desc. %</th>
+                                <th style="width: 15%;" class="text-right">Precio Final</th>
                                 <th style="width: 15%;" class="text-right">Subtotal</th>
                                 <th style="width: 5%;" class="text-center no-print"></th>
                             </tr>
                         </thead>
                         <tbody id="items-container"></tbody>
                         <tfoot>
+                            <tr id="row-total-sin-descuento" style="display: none;">
+                                <td colspan="5" class="text-right text-muted small">TOTAL SIN DESCUENTO</td>
+                                <td id="total-sin-descuento" class="text-right text-muted small text-strikethrough">$0.00</td>
+                                <td class="no-print"></td>
+                            </tr>
+                            <tr id="row-ahorro" style="display: none;">
+                                <td colspan="5" class="text-right text-success font-weight-bold">AHORRO TOTAL</td>
+                                <td id="total-ahorro" class="text-right text-success font-weight-bold">-$0.00</td>
+                                <td class="no-print"></td>
+                            </tr>
                             <tr>
-                                <td colspan="3" class="text-right font-weight-bold">TOTAL ESTIMADO</td>
+                                <td colspan="5" class="text-right font-weight-bold">TOTAL ESTIMADO</td>
                                 <td id="total-presupuesto" class="text-right font-weight-bold h4 mb-0 text-primary">$0.00</td>
                                 <td class="no-print"></td>
                             </tr>
@@ -203,6 +215,7 @@ export class PresupuestosPage {
                 .search-result-item:hover { background-color: #e9ecef; }
                 .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 2000; }
                 .modal-content-custom { background: white; border-radius: 12px; width: 95%; max-width: 850px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+                .text-strikethrough { text-decoration: line-through; }
                 .sticky-top { position: sticky; top: 0; background: #f8f9fa; z-index: 5; }
                 .flex { display: flex; } .justify-between { justify-content: space-between; } .grid { display: grid; } .grid-2 { grid-template-columns: repeat(2, 1fr); } .gap-2 { gap: 0.5rem; }
             </style>
@@ -224,6 +237,7 @@ export class PresupuestosPage {
         if (!body) return; body.innerHTML = '';
         this.state.items.forEach((item, idx) => {
             const tr = document.createElement('tr');
+            const hasDiscount = item.descuento > 0;
             tr.innerHTML = `
                 <td class="p-2">
                     <div class="no-print">
@@ -232,8 +246,26 @@ export class PresupuestosPage {
                     </div>
                     <div class="print-only" style="white-space: pre-wrap;">${item.descripcion || '-'}</div>
                 </td>
-                <td class="text-center p-2"><input type="number" class="form-control form-control-sm text-center input-cantidad no-print" data-index="${idx}" value="${item.cantidad}" min="1"><span class="print-only">${item.cantidad}</span></td>
-                <td class="text-right p-2"><input type="number" class="form-control form-control-sm text-right input-precio no-print" data-index="${idx}" value="${item.precio}" step="100"><span class="print-only">$${this.formatNumber(item.precio)}</span></td>
+                <td class="text-center p-2 align-middle">
+                    <input type="number" class="form-control form-control-sm text-center input-cantidad no-print" data-index="${idx}" value="${item.cantidad}" min="1">
+                    <span class="print-only">${item.cantidad}</span>
+                </td>
+                <td class="text-right p-2 align-middle">
+                    <input type="number" class="form-control form-control-sm text-right input-precio-base no-print" data-index="${idx}" value="${item.precioBase || item.precio}" step="100">
+                    <div class="no-print text-strikethrough small text-muted" style="${hasDiscount ? 'display: block;' : 'display: none;'}">$${this.formatNumber(item.precioBase || item.precio)}</div>
+                    <span class="print-only ${hasDiscount ? 'text-strikethrough small text-muted' : ''}" style="${hasDiscount ? 'display: block;' : ''}">$${this.formatNumber(item.precioBase || item.precio)}</span>
+                </td>
+                <td class="text-right p-2 align-middle">
+                    <div class="no-print" style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" class="form-control form-control-sm text-right input-descuento" data-index="${idx}" value="${item.descuento || 0}" min="0" max="100">
+                        <span>%</span>
+                    </div>
+                    <span class="print-only">${item.descuento || 0}%</span>
+                </td>
+                <td class="text-right p-2 align-middle">
+                    <input type="number" class="form-control form-control-sm text-right input-precio no-print" data-index="${idx}" value="${item.precio}" step="100">
+                    <span class="print-only font-weight-bold" style="color: var(--success-color);">$${this.formatNumber(item.precio)}</span>
+                </td>
                 <td class="text-right p-2 align-middle font-weight-bold" style="${item.precio < 0 ? 'color: #dc3545;' : ''}">$${this.formatNumber(item.cantidad * item.precio)}</td>
                 <td class="text-center p-2 no-print align-middle"><button class="btn btn-sm btn-link text-danger btn-remove-item" data-index="${idx}"><i class="fas fa-trash-alt"></i></button></td>
             `;
@@ -247,7 +279,8 @@ export class PresupuestosPage {
             const a = this.tiposAbono.find(x => x.id == e.target.value);
             if (a) {
                 const idx = e.target.dataset.index;
-                this.state.items[idx] = { ...this.state.items[idx], abonoId: a.id, descripcion: a.nombre, precio: parseFloat(a.precio) };
+                const p = parseFloat(a.precio);
+                this.state.items[idx] = { ...this.state.items[idx], abonoId: a.id, descripcion: a.nombre, precioBase: p, precio: p, descuento: 0 };
                 this.renderItems(); this.calculate();
             }
         });
@@ -260,8 +293,30 @@ export class PresupuestosPage {
             const idx = e.target.dataset.index; this.state.items[idx].cantidad = parseInt(e.target.value) || 0; 
             this.calculate(); this.updateRowSubtotal(e.target);
         });
+        this.container.querySelectorAll('.input-precio-base').forEach(el => el.oninput = (e) => {
+            const idx = e.target.dataset.index;
+            const item = this.state.items[idx];
+            item.precioBase = parseFloat(e.target.value) || 0;
+            // Update final price based on base and current discount
+            item.precio = item.precioBase * (1 - (item.descuento / 100));
+            this.calculate(); this.updateRowSubtotal(e.target);
+        });
+        this.container.querySelectorAll('.input-descuento').forEach(el => el.oninput = (e) => {
+            const idx = e.target.dataset.index;
+            const item = this.state.items[idx];
+            item.descuento = parseFloat(e.target.value) || 0;
+            // Update final price based on base and new discount
+            item.precio = item.precioBase * (1 - (item.descuento / 100));
+            this.calculate(); this.updateRowSubtotal(e.target);
+        });
         this.container.querySelectorAll('.input-precio').forEach(el => el.oninput = (e) => { 
-            const idx = e.target.dataset.index; this.state.items[idx].precio = parseFloat(e.target.value) || 0; 
+            const idx = e.target.dataset.index;
+            const item = this.state.items[idx];
+            item.precio = parseFloat(e.target.value) || 0; 
+            // Update discount based on new final price and base price
+            if (item.precioBase > 0) {
+                item.descuento = Math.round((1 - (item.precio / item.precioBase)) * 100);
+            }
             this.calculate(); this.updateRowSubtotal(e.target);
         });
         this.container.querySelectorAll('.btn-remove-item').forEach(el => el.onclick = (e) => { this.state.items.splice(e.currentTarget.dataset.index, 1); this.renderItems(); this.calculate(); });
@@ -269,19 +324,56 @@ export class PresupuestosPage {
 
     updateRowSubtotal(input) {
         const row = input.closest('tr'); const idx = input.dataset.index; const item = this.state.items[idx];
+        const hasDiscount = item.descuento > 0.01;
         const cantSpan = row.querySelector('td:nth-child(2) .print-only'); if (cantSpan) cantSpan.textContent = item.cantidad;
-        const precioSpan = row.querySelector('td:nth-child(3) .print-only'); if (precioSpan) precioSpan.textContent = `$${this.formatNumber(item.precio)}`;
-        const subtotalEl = row.querySelectorAll('td')[3];
+        
+        const baseHint = row.querySelector('td:nth-child(3) .no-print.text-strikethrough');
+        if (baseHint) {
+            baseHint.textContent = `$${this.formatNumber(item.precioBase || item.precio)}`;
+            baseHint.style.display = hasDiscount ? 'block' : 'none';
+        }
+
+        const baseSpan = row.querySelector('td:nth-child(3) .print-only'); 
+        if (baseSpan) {
+            baseSpan.textContent = `$${this.formatNumber(item.precioBase || item.precio)}`;
+            if (hasDiscount) {
+                baseSpan.classList.add('text-strikethrough', 'small', 'text-muted');
+                baseSpan.style.display = 'block';
+            } else {
+                baseSpan.classList.remove('text-strikethrough', 'small', 'text-muted');
+                baseSpan.style.display = '';
+            }
+        }
+
+        const descSpan = row.querySelector('td:nth-child(4) .print-only'); if (descSpan) descSpan.textContent = `${item.descuento || 0}%`;
+        
+        const precioSpan = row.querySelector('td:nth-child(5) .print-only'); 
+        if (precioSpan) {
+            precioSpan.textContent = `$${this.formatNumber(item.precio)}`;
+            precioSpan.style.color = hasDiscount ? 'var(--success-color)' : '';
+        }
+        
+        // Sync inputs
+        const precioBaseInput = row.querySelector('.input-precio-base');
+        const descuentoInput = row.querySelector('.input-descuento');
+        const precioInput = row.querySelector('.input-precio');
+        
+        if (precioBaseInput && input !== precioBaseInput) precioBaseInput.value = (item.precioBase || 0).toFixed(2);
+        if (descuentoInput && input !== descuentoInput) descuentoInput.value = (item.descuento || 0);
+        if (precioInput && input !== precioInput) precioInput.value = (item.precio || 0).toFixed(2);
+
+        const subtotalEl = row.querySelectorAll('td')[5];
         subtotalEl.textContent = `$${this.formatNumber(item.cantidad * item.precio)}`;
         subtotalEl.style.color = item.precio < 0 ? '#dc3545' : '';
     }
 
     attachEvents() {
         const getEl = (id) => this.container.querySelector(`#${id}`);
-        getEl('btn-add-item').onclick = () => { this.state.items.push({ id: Date.now(), descripcion: '', cantidad: 1, precio: 0, abonoId: '' }); this.renderItems(); };
+        getEl('btn-add-item').onclick = () => { this.state.items.push({ id: Date.now(), descripcion: '', cantidad: 1, precioBase: 0, descuento: 0, precio: 0, abonoId: '' }); this.renderItems(); };
         getEl('btn-add-cuota-social').onclick = () => {
             const defaultSocialFee = this.lugares.find(l => l.costo_cuota_social > 0);
-            this.state.items.push({ id: Date.now(), descripcion: 'Cuota Social', cantidad: 1, precio: defaultSocialFee ? parseFloat(defaultSocialFee.costo_cuota_social) : 0, abonoId: '' });
+            const p = defaultSocialFee ? parseFloat(defaultSocialFee.costo_cuota_social) : 0;
+            this.state.items.push({ id: Date.now(), descripcion: 'Cuota Social', cantidad: 1, precioBase: p, precio: p, descuento: 0, abonoId: '' });
             this.renderItems(); this.calculate();
         };
         getEl('btn-limpiar').onclick = () => { if (confirm('¿Limpiar todo?')) { 
@@ -370,7 +462,15 @@ export class PresupuestosPage {
                 practicanteId: p.practicante_id,
                 fecha: (p.fecha && p.fecha.includes('T')) ? p.fecha.split('T')[0] : p.fecha,
                 observaciones: p.observaciones || '',
-                items: p.items.map(i => ({ id: i.id, descripcion: i.descripcion, cantidad: i.cantidad, precio: parseFloat(i.precio_unitario), abonoId: i.abono_id }))
+                items: p.items.map(i => ({ 
+                    id: i.id, 
+                    descripcion: i.descripcion, 
+                    cantidad: i.cantidad, 
+                    precioBase: i.precio_base ? parseFloat(i.precio_base) : parseFloat(i.precio_unitario),
+                    descuento: i.descuento ? parseFloat(i.descuento) : 0,
+                    precio: parseFloat(i.precio_unitario), 
+                    abonoId: i.abono_id 
+                }))
             };
             this.render(); this.closeHistorialModal(); showSuccess('Presupuesto cargado.');
         } catch (e) { displayApiError(e); }
@@ -451,8 +551,27 @@ export class PresupuestosPage {
     }
     updateConfirmButton() { const b = this.container.querySelector('#btn-confirm-asistencia'); b.disabled = this.state.selectedAsistenciaIds.size === 0; b.textContent = `Agregar Seleccionadas (${this.state.selectedAsistenciaIds.size})`; }
     closeAsistenciaModal() { this.container.querySelector('#modal-asistencia').style.display = 'none'; }
-    confirmAsistencia() { const sel = this.state.asistencia.filter(a => this.state.selectedAsistenciaIds.has(a.clase_id)); const groups = {}; sel.forEach(a => { const isCred = a.clase_estado !== 'programada'; const k = `${a.actividad_nombre} (${a.lugar_nombre})${isCred ? ' [CRÉDITO]' : ''}`; if (!groups[k]) groups[k] = { count: 0, dates: [], totalRef: 0, obs: [], isCred }; groups[k].count++; groups[k].dates.push(this.formatDateShort(a.fecha)); if (a.monto_referencia_espacio) groups[k].totalRef += parseFloat(a.monto_referencia_espacio); if (a.clase_observaciones) groups[k].obs.push(a.clase_observaciones); }); if (this.state.items.length === 1 && !this.state.items[0].descripcion && this.state.items[0].precio === 0) this.state.items = []; Object.keys(groups).forEach(k => { const g = groups[k]; let desc = `${k}\nSesiones: ${g.dates.join(', ')}`; if (g.obs.length > 0) desc += `\nNotas: ${[...new Set(g.obs)].join('; ')}`; const precioSugerido = g.isCred ? -(g.totalRef / g.count) : (g.totalRef / g.count); this.state.items.push({ id: Date.now() + Math.random(), descripcion: desc, cantidad: g.count, precio: precioSugerido || 0, abonoId: '' }); }); this.renderItems(); this.calculate(); this.closeAsistenciaModal(); showSuccess('Importado.'); }
-    calculate() { const t = this.state.items.reduce((s, i) => s + (i.cantidad * i.precio), 0); this.container.querySelector('#total-presupuesto').textContent = `$${this.formatNumber(t)}`; }
+    confirmAsistencia() { const sel = this.state.asistencia.filter(a => this.state.selectedAsistenciaIds.has(a.clase_id)); const groups = {}; sel.forEach(a => { const isCred = a.clase_estado !== 'programada'; const k = `${a.actividad_nombre} (${a.lugar_nombre})${isCred ? ' [CRÉDITO]' : ''}`; if (!groups[k]) groups[k] = { count: 0, dates: [], totalRef: 0, obs: [], isCred }; groups[k].count++; groups[k].dates.push(this.formatDateShort(a.fecha)); if (a.monto_referencia_espacio) groups[k].totalRef += parseFloat(a.monto_referencia_espacio); if (a.clase_observaciones) groups[k].obs.push(a.clase_observaciones); }); if (this.state.items.length === 1 && !this.state.items[0].descripcion && this.state.items[0].precio === 0) this.state.items = []; Object.keys(groups).forEach(k => { const g = groups[k]; let desc = `${k}\nSesiones: ${g.dates.join(', ')}`; if (g.obs.length > 0) desc += `\nNotas: ${[...new Set(g.obs)].join('; ')}`; const precioSugerido = g.isCred ? -(g.totalRef / g.count) : (g.totalRef / g.count); this.state.items.push({ id: Date.now() + Math.random(), descripcion: desc, cantidad: g.count, precioBase: Math.abs(precioSugerido || 0), descuento: 0, precio: precioSugerido || 0, abonoId: '' }); }); this.renderItems(); this.calculate(); this.closeAsistenciaModal(); showSuccess('Importado.'); }
+    calculate() { 
+        const totalConDesc = this.state.items.reduce((s, i) => s + (i.cantidad * i.precio), 0);
+        const totalSinDesc = this.state.items.reduce((s, i) => s + (i.cantidad * (i.precioBase || i.precio)), 0);
+        const ahorro = totalSinDesc - totalConDesc;
+
+        const rowSinDesc = this.container.querySelector('#row-total-sin-descuento');
+        const rowAhorro = this.container.querySelector('#row-ahorro');
+        
+        if (ahorro > 0.01) {
+            rowSinDesc.style.display = 'table-row';
+            rowAhorro.style.display = 'table-row';
+            this.container.querySelector('#total-sin-descuento').textContent = `$${this.formatNumber(totalSinDesc)}`;
+            this.container.querySelector('#total-ahorro').textContent = `-$${this.formatNumber(ahorro)}`;
+        } else {
+            rowSinDesc.style.display = 'none';
+            rowAhorro.style.display = 'none';
+        }
+
+        this.container.querySelector('#total-presupuesto').textContent = `$${this.formatNumber(totalConDesc)}`; 
+    }
     formatNumber(n) { return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     formatDate(d) { if (!d) return ''; const s = (typeof d === 'string' && d.includes('T')) ? d.split('T')[0] : d; const [y, m, day] = s.split('-'); return `${day}/${m}/${y}`; }
     formatDateShort(d) { if (!d) return ''; const s = (typeof d === 'string' && d.includes('T')) ? d.split('T')[0] : d; const [y, m, day] = s.split('-'); return `${day}/${m}`; }

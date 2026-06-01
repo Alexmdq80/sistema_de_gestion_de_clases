@@ -11,6 +11,8 @@ export class Practicante {
         this.nombre_completo = data.nombre_completo;
         this.dni = data.dni || null;
         this.fecha_nacimiento = data.fecha_nacimiento || null;
+        this.cumple_dia = data.cumple_dia || null;
+        this.cumple_mes = data.cumple_mes || null;
         this.genero = data.genero || null;
         this.telefono = data.telefono || null;
         this.email = data.email || null;
@@ -52,13 +54,13 @@ export class Practicante {
     static async create(data, userId = null) {
         const sql = `
       INSERT INTO Practicante (
-        user_id, es_profesor, nombre_completo, dni, fecha_nacimiento, genero, telefono, email,
+        user_id, es_profesor, nombre_completo, dni, fecha_nacimiento, cumple_dia, cumple_mes, genero, telefono, email,
         direccion, condiciones_medicas, medicamentos, limitaciones_fisicas, alergias,
         emergencia_nombre, emergencia_telefono, obra_social, obra_social_nro,
         emergencia_servicio, emergencia_servicio_telefono, ocupacion, estudios,
         actividad_fisica_actual, actividad_fisica_detalle, actividad_fisica_anios_inactivo,
         actividad_fisica_anterior, observaciones_adicionales, activo, archivado_at, reingreso_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
         const values = [
@@ -67,6 +69,8 @@ export class Practicante {
             data.nombre_completo,
             data.dni || null,
             data.fecha_nacimiento || null,
+            data.cumple_dia || null,
+            data.cumple_mes || null,
             data.genero || null,
             data.telefono || null,
             data.email || null,
@@ -110,7 +114,82 @@ export class Practicante {
      * @returns {Promise<Practicante|null>}
      */
     static async findById(id, connection = null) {
-        const sql = 'SELECT * FROM Practicante WHERE id = ? AND deleted_at IS NULL';
+        const sql = `
+            SELECT 
+                p.*, 
+                (SELECT COUNT(*) FROM Socio s WHERE s.practicante_id = p.id AND s.deleted_at IS NULL) as socio_count,
+                
+                (SELECT ta.nombre 
+                 FROM Pago pg 
+                 JOIN Abono ab ON pg.abono_id = ab.id 
+                 JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id 
+                 WHERE pg.practicante_id = p.id AND pg.deleted_at IS NULL 
+                 ORDER BY pg.fecha DESC, pg.id DESC LIMIT 1) as ultimo_abono_nombre,
+                
+                (SELECT pg.mes_abono 
+                 FROM Pago pg 
+                 JOIN Abono ab ON pg.abono_id = ab.id 
+                 WHERE pg.practicante_id = p.id AND pg.deleted_at IS NULL 
+                 ORDER BY pg.fecha DESC, pg.id DESC LIMIT 1) as ultimo_abono_mes,
+                
+                (SELECT pg.mes_abono 
+                 FROM Pago pg 
+                 WHERE pg.practicante_id = p.id AND pg.abono_id IS NULL AND pg.deleted_at IS NULL 
+                 ORDER BY pg.fecha DESC, pg.id DESC LIMIT 1) as ultima_cuota_social_recibida_mes,
+
+                (SELECT ps.mes_abono 
+                 FROM PagoSocio ps 
+                 JOIN Socio s ON ps.socio_id = s.id 
+                 WHERE s.practicante_id = p.id AND ps.fecha_pago IS NOT NULL AND ps.deleted_at IS NULL 
+                 ORDER BY ps.fecha_pago DESC, ps.id DESC LIMIT 1) as ultima_cuota_social_pagada_mes,
+                 
+                (SELECT 
+                    (SELECT IFNULL(SUM(ab.cantidad), 0) 
+                     FROM Abono ab 
+                     JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id 
+                     WHERE ab.practicante_id = p.id 
+                       AND (ta.categoria IN ('particular', 'compartida') OR ta.duracion_dias = 0)
+                       AND ab.deleted_at IS NULL
+                       AND EXISTS (
+                           SELECT 1 FROM Pago pg 
+                           WHERE pg.abono_id = ab.id 
+                             AND pg.deleted_at IS NULL
+                       ))
+                    -
+                    (SELECT COUNT(*) 
+                     FROM Asistencia asis 
+                     JOIN Clase cl ON asis.clase_id = cl.id 
+                     WHERE asis.practicante_id = p.id 
+                       AND cl.deleted_at IS NULL
+                       AND (
+                           asis.asistio = 1
+                           OR 
+                           EXISTS (
+                               SELECT 1 FROM MovimientoCaja mc 
+                               WHERE mc.clase_id = cl.id 
+                               AND mc.practicante_id = asis.practicante_id 
+                               AND mc.categoria = 'Nota de Crédito'
+                               AND mc.deleted_at IS NULL
+                           )
+                       )
+                       AND (cl.tipo = 'flexible' OR EXISTS (
+                           SELECT 1 FROM TipoAbono ta2 
+                           JOIN Abono ab2 ON ta2.id = ab2.tipo_abono_id
+                           WHERE ab2.id = cl.horario_id
+                           AND ta2.duracion_dias = 0
+                       ))
+                       AND cl.fecha <= CURDATE())
+                 WHERE EXISTS (
+                     SELECT 1 FROM Abono ab3 
+                     JOIN TipoAbono ta3 ON ab3.tipo_abono_id = ta3.id 
+                     WHERE ab3.practicante_id = p.id 
+                       AND (ta3.categoria IN ('particular', 'compartida') OR ta3.duracion_dias = 0) 
+                       AND ab3.deleted_at IS NULL
+                 )
+                ) as clases_restantes
+            FROM Practicante p
+            WHERE p.id = ? AND p.deleted_at IS NULL
+        `;
         const executor = connection || pool;
         const [rows] = await executor.execute(sql, [id]);
 
@@ -118,7 +197,15 @@ export class Practicante {
             return null;
         }
 
-        return new Practicante(rows[0]);
+        const row = rows[0];
+        const p = new Practicante(row);
+        p.socio_count = row.socio_count || 0;
+        p.ultimo_abono_nombre = row.ultimo_abono_nombre || null;
+        p.ultimo_abono_mes = row.ultimo_abono_mes || null;
+        p.ultima_cuota_social_recibida_mes = row.ultima_cuota_social_recibida_mes || null;
+        p.ultima_cuota_social_pagada_mes = row.ultima_cuota_social_pagada_mes || null;
+        p.clases_restantes = row.clases_restantes !== null ? parseInt(row.clases_restantes, 10) : null;
+        return p;
     }
 
     /**
@@ -217,13 +304,22 @@ export class Practicante {
                      FROM Asistencia asis 
                      JOIN Clase cl ON asis.clase_id = cl.id 
                      WHERE asis.practicante_id = p.id 
-                       AND asis.asistio = 1 
                        AND cl.deleted_at IS NULL
-                       AND cl.estado NOT IN ('cancelada', 'sin_actividad', 'suspendida')
+                       AND (
+                           asis.asistio = 1
+                           OR 
+                           EXISTS (
+                               SELECT 1 FROM MovimientoCaja mc 
+                               WHERE mc.clase_id = cl.id 
+                               AND mc.practicante_id = asis.practicante_id 
+                               AND mc.categoria = 'Nota de Crédito'
+                               AND mc.deleted_at IS NULL
+                           )
+                       )
                        AND (cl.tipo = 'flexible' OR EXISTS (
                            SELECT 1 FROM TipoAbono ta2 
                            JOIN Abono ab2 ON ta2.id = ab2.tipo_abono_id
-                           WHERE ab2.id = cl.horario_id -- Note: if it was a manual class, we might need more logic
+                           WHERE ab2.id = cl.horario_id
                            AND ta2.duracion_dias = 0
                        ))
                        AND cl.fecha <= CURDATE())
@@ -282,7 +378,7 @@ export class Practicante {
         if (!currentData) return null;
 
         const allowedFields = [
-            'nombre_completo', 'dni', 'fecha_nacimiento', 'genero', 'telefono', 'email',
+            'nombre_completo', 'dni', 'fecha_nacimiento', 'cumple_dia', 'cumple_mes', 'genero', 'telefono', 'email',
             'direccion', 'condiciones_medicas', 'medicamentos', 'limitaciones_fisicas', 'alergias',
             'user_id', 'es_profesor',
             'emergencia_nombre', 'emergencia_telefono', 'obra_social', 'obra_social_nro',
@@ -447,6 +543,8 @@ export class Practicante {
             nombre_completo: this.nombre_completo,
             dni: this.dni,
             fecha_nacimiento: this.fecha_nacimiento,
+            cumple_dia: this.cumple_dia,
+            cumple_mes: this.cumple_mes,
             genero: this.genero,
             telefono: this.telefono,
             email: this.email,

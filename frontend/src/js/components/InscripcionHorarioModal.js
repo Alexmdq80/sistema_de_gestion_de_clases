@@ -39,14 +39,23 @@ export class InscripcionHorarioModal {
                         <p class="text-muted mb-2">Seleccione los horarios semanales a los que asiste el alumno habitualmente.</p>
                         
                         <!-- Filtros de Tipo -->
-                        <div class="filters-container mb-3 p-2 bg-white border rounded flex gap-4 items-center" style="font-size: 0.9rem;">
-                            <span class="font-weight-bold">Filtrar por:</span>
-                            <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
-                                <input type="checkbox" id="filter-grupal" checked> Grupales
-                            </label>
-                            <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
-                                <input type="checkbox" id="filter-flexible" checked> Particulares/Compartidas
-                            </label>
+                        <div class="filters-container mb-3 p-2 bg-white border rounded flex flex-wrap gap-4 items-center" style="font-size: 0.9rem;">
+                            <div class="flex items-center gap-2">
+                                <span class="font-weight-bold">Tipo:</span>
+                                <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
+                                    <input type="checkbox" id="filter-grupal" checked> Grupales
+                                </label>
+                                <label class="flex items-center gap-1 mb-0" style="cursor: pointer;">
+                                    <input type="checkbox" id="filter-flexible" checked> Particulares/Compartidas
+                                </label>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <span class="font-weight-bold">Actividad:</span>
+                                <select id="filter-actividad" class="form-control form-control-sm" style="width: auto;">
+                                    <option value="all">Todas</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div id="horarios-inscripcion-list" class="card p-3 bg-light border">
@@ -106,6 +115,7 @@ export class InscripcionHorarioModal {
         const saveBtn = modalDiv.querySelector('#save-horarios-btn');
         const filterGrupal = modalDiv.querySelector('#filter-grupal');
         const filterFlexible = modalDiv.querySelector('#filter-flexible');
+        const filterActividad = modalDiv.querySelector('#filter-actividad');
 
         const closeModal = () => {
             modalDiv.remove();
@@ -126,6 +136,7 @@ export class InscripcionHorarioModal {
 
         filterGrupal.addEventListener('change', handleFilterChange);
         filterFlexible.addEventListener('change', handleFilterChange);
+        filterActividad.addEventListener('change', handleFilterChange);
 
         // Close when clicking outside
         window.onclick = (event) => {
@@ -147,6 +158,26 @@ export class InscripcionHorarioModal {
             this.allHorarios = horariosRes.data;
             this.inscriptosIds = (inscripcionesRes.data || []).map(i => i.horario_id);
             
+            // Llenar select de actividades
+            const activities = [];
+            const activityIds = new Set();
+            this.allHorarios.forEach(h => {
+                if (h.actividad_id && !activityIds.has(h.actividad_id)) {
+                    activityIds.add(h.actividad_id);
+                    activities.push({ id: h.actividad_id, nombre: h.actividad_nombre });
+                }
+            });
+            
+            const filterActividad = modalDiv.querySelector('#filter-actividad');
+            if (filterActividad) {
+                activities.sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(act => {
+                    const option = document.createElement('option');
+                    option.value = act.id;
+                    option.textContent = act.nombre;
+                    filterActividad.appendChild(option);
+                });
+            }
+
             this.renderFilteredList(modalDiv);
         } catch (error) {
             listContainer.innerHTML = '<div class="alert alert-danger">Error al cargar horarios</div>';
@@ -158,10 +189,21 @@ export class InscripcionHorarioModal {
         const listContainer = modalDiv.querySelector('#horarios-inscripcion-list');
         const showGrupal = modalDiv.querySelector('#filter-grupal').checked;
         const showFlexible = modalDiv.querySelector('#filter-flexible').checked;
+        const activityFilter = modalDiv.querySelector('#filter-actividad').value;
 
         const filtered = this.allHorarios.filter(h => {
-            if (h.tipo === 'grupal') return showGrupal;
-            if (h.tipo === 'flexible' || h.tipo === 'particular' || h.tipo === 'compartida') return showFlexible;
+            // Filtro por tipo
+            let matchesType = false;
+            if (h.tipo === 'grupal' && showGrupal) matchesType = true;
+            if ((h.tipo === 'flexible' || h.tipo === 'particular' || h.tipo === 'compartida') && showFlexible) matchesType = true;
+            
+            if (!matchesType) return false;
+
+            // Filtro por actividad
+            if (activityFilter !== 'all' && h.actividad_id != activityFilter) {
+                return false;
+            }
+
             return true;
         });
 

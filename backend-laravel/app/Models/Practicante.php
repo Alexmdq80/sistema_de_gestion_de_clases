@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Practicante extends Model
 {
@@ -27,6 +28,8 @@ class Practicante extends Model
         'nombre_completo',
         'dni',
         'fecha_nacimiento',
+        'cumple_dia',
+        'cumple_mes',
         'genero',
         'telefono',
         'email',
@@ -155,11 +158,22 @@ public function getClasesRestantesAttribute()
         ->sum('cantidad');
 // Total asistencias
 $asistidas = \App\Models\Asistencia::where('Asistencia.practicante_id', $this->id)
-    ->where('Asistencia.asistio', true)
     ->whereHas('clase', function($q) {
         $q->whereNull('deleted_at')
-          ->whereNotIn('estado', ['cancelada', 'sin_actividad', 'suspendida'])
           ->where('fecha', '<=', now()->toDateString());
+    })
+    ->where(function($q) {
+        // Case 1: asistio is true (includes manual "Mark as used" override)
+        $q->where('asistio', true)
+        // Case 2: Has a Credit Note
+        ->orWhereExists(function($query) {
+            $query->select(DB::raw(1))
+                  ->from('MovimientoCaja')
+                  ->whereColumn('clase_id', 'Asistencia.clase_id')
+                  ->whereColumn('practicante_id', 'Asistencia.practicante_id')
+                  ->where('categoria', 'Nota de Crédito')
+                  ->whereNull('deleted_at');
+        });
     })
     ->where(function($q) {
         // Filtro complejo de Node: cl.tipo = 'flexible' OR duracion_dias = 0

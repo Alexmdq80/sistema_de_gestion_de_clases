@@ -355,22 +355,24 @@ router.get('/practicantes/cumpleanos', asyncHandler(async (req, res) => {
     const { mes, lugar_id } = req.query;
     
     let sql = `
-        SELECT 
-            p.nombre_completo, 
-            p.fecha_nacimiento, 
-            TIMESTAMPDIFF(YEAR, p.fecha_nacimiento, CURDATE()) AS edad,
+        SELECT
+            p.nombre_completo,
+            p.fecha_nacimiento,
+            p.cumple_dia,
+            p.cumple_mes,
+            IF(p.fecha_nacimiento IS NOT NULL, TIMESTAMPDIFF(YEAR, p.fecha_nacimiento, CURDATE()), NULL) AS edad,
             l.nombre as sede_nombre
         FROM Practicante p
         LEFT JOIN Socio s ON s.practicante_id = p.id AND s.deleted_at IS NULL
         LEFT JOIN Lugar l ON s.lugar_id = l.id
-        WHERE p.deleted_at IS NULL 
-          AND p.fecha_nacimiento IS NOT NULL
+        WHERE p.deleted_at IS NULL
+          AND (p.fecha_nacimiento IS NOT NULL OR (p.cumple_dia IS NOT NULL AND p.cumple_mes IS NOT NULL))
     `;
     const params = [];
 
     if (mes) {
-        sql += ' AND MONTH(p.fecha_nacimiento) = ?';
-        params.push(mes);
+        sql += ' AND (MONTH(p.fecha_nacimiento) = ? OR p.cumple_mes = ?)';
+        params.push(mes, mes);
     }
 
     if (lugar_id) {
@@ -378,7 +380,10 @@ router.get('/practicantes/cumpleanos', asyncHandler(async (req, res) => {
         params.push(lugar_id, lugar_id);
     }
 
-    sql += ' ORDER BY MONTH(p.fecha_nacimiento), DAY(p.fecha_nacimiento), p.nombre_completo';
+    sql += ` ORDER BY 
+        COALESCE(p.cumple_mes, MONTH(p.fecha_nacimiento)), 
+        COALESCE(p.cumple_dia, DAY(p.fecha_nacimiento)), 
+        p.nombre_completo`;
 
     const [rows] = await pool.execute(sql, params);
     res.json({ data: rows });

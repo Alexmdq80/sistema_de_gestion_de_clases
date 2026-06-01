@@ -871,19 +871,27 @@ export class InformesPage {
                         <tr>
                             <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-birthday" checked title="Seleccionar todos"></th>
                             <th>Nombre y Apellido</th>
-                            <th>Fecha de Nacimiento</th>
+                            <th>Fecha de Nacimiento / Cumpleaños</th>
                             ${!this.hideBirthYear ? '<th>Edad Actual</th>' : ''}
                         </tr>
                     </thead>
                     <tbody>
                         ${this.data.map((item, index) => {
-                            let fechaNac = formatDateDashes(item.fecha_nacimiento);
+                            let fechaNac = '';
+                            if (item.fecha_nacimiento) {
+                                fechaNac = formatDateDashes(item.fecha_nacimiento);
+                            } else if (item.cumple_dia && item.cumple_mes) {
+                                fechaNac = `${String(item.cumple_dia).padStart(2, '0')}-${String(item.cumple_mes).padStart(2, '0')}`;
+                            }
+
                             let nombre = item.nombre_completo;
 
                             if (this.hideBirthYear) {
                                 // Ocultar año
                                 if (fechaNac) {
                                     const parts = fechaNac.split('-');
+                                    // Si tiene 3 partes (YYYY-MM-DD), nos quedamos con DD-MM
+                                    // Nota: formatDateDashes suele devolver DD-MM-YYYY o DD-MM
                                     if (parts.length === 3) {
                                         fechaNac = `${parts[0]}-${parts[1]}`;
                                     }
@@ -899,12 +907,14 @@ export class InformesPage {
                                 }
                             }
 
+                            const edadText = item.edad !== null && item.edad !== undefined ? `${item.edad} años` : '<span class="text-muted italic">Desconocida</span>';
+
                             return `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                     <td>${nombre}</td>
                                     <td>${fechaNac}</td>
-                                    ${!this.hideBirthYear ? `<td>${item.edad} años</td>` : ''}
+                                    ${!this.hideBirthYear ? `<td>${edadText}</td>` : ''}
                                 </tr>
                             `;
                         }).join('')}

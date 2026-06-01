@@ -149,11 +149,21 @@ class InformeController extends Controller
         $lugar_id = $request->lugar_id;
 
         $query = Practicante::query()
-            ->select('nombre_completo', 'fecha_nacimiento')
-            ->whereMonth('fecha_nacimiento', $mes)
-            ->whereNull('deleted_at');
+            ->select('Practicante.nombre_completo', 'Practicante.fecha_nacimiento', 'Practicante.cumple_dia', 'Practicante.cumple_mes')
+            ->where(function($q) use ($mes) {
+                $q->whereMonth('fecha_nacimiento', $mes)
+                  ->orWhere('cumple_mes', $mes);
+            })
+            ->whereNull('Practicante.deleted_at')
+            ->when($lugar_id, function($q) use ($lugar_id) {
+                $q->join('Socio', 'Socio.practicante_id', '=', 'Practicante.id')
+                  ->where('Socio.lugar_id', $lugar_id)
+                  ->whereNull('Socio.deleted_at');
+            });
 
-        return response()->json(['data' => $query->orderByRaw('DAY(fecha_nacimiento)')->get()]);
+        return response()->json([
+            'data' => $query->orderByRaw('COALESCE(cumple_dia, DAY(fecha_nacimiento))')->get()
+        ]);
     }
 
     /**

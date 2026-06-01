@@ -57,7 +57,7 @@ export class PracticanteForm {
             </div>
 
             <div class="form-group">
-              <label for="fecha_nacimiento">Fecha de Nacimiento</label>
+              <label for="fecha_nacimiento">Fecha de Nacimiento (Completa)</label>
               <input 
                 type="date" 
                 id="fecha_nacimiento" 
@@ -65,6 +65,31 @@ export class PracticanteForm {
                 class="form-control"
                 value="${formatDate(practicante.fecha_nacimiento)}"
               />
+              <small class="text-muted">Si no conoce el año, utilice los campos de abajo.</small>
+            </div>
+
+            <div class="form-row" style="display: flex; gap: 1rem;">
+              <div class="form-group" style="flex: 1;">
+                <label for="cumple_dia">Día Cumpleaños</label>
+                <input 
+                  type="number" 
+                  id="cumple_dia" 
+                  name="cumple_dia" 
+                  class="form-control"
+                  min="1"
+                  max="31"
+                  value="${practicante.cumple_dia || ''}"
+                />
+              </div>
+              <div class="form-group" style="flex: 2;">
+                <label for="cumple_mes">Mes Cumpleaños</label>
+                <select id="cumple_mes" name="cumple_mes" class="form-control">
+                  <option value="">Seleccionar...</option>
+                  ${['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, i) => `
+                    <option value="${i + 1}" ${practicante.cumple_mes == i + 1 ? 'selected' : ''}>${m}</option>
+                  `).join('')}
+                </select>
+              </div>
             </div>
 
             <div class="form-group">

@@ -177,7 +177,13 @@ export class PracticanteDetail {
               <dd>${practicante.dni || 'No especificado'}</dd>
               
               <dt>Fecha de Nacimiento:</dt>
-              <dd>${practicante.fecha_nacimiento ? formatDateReadable(practicante.fecha_nacimiento) : 'No especificada'}</dd>
+              <dd>
+               ${practicante.fecha_nacimiento ? formatDateReadable(practicante.fecha_nacimiento) : 
+                 (practicante.cumple_dia && practicante.cumple_mes ? 
+                   `${practicante.cumple_dia} de ${['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][practicante.cumple_mes - 1]}` : 
+                   'No especificada')
+               }
+              </dd>
               
               <dt>Género:</dt>
               <dd>${this.formatGenero(practicante.genero)}</dd>
@@ -336,9 +342,34 @@ export class PracticanteDetail {
 
             <div id="selected-abono-details" style="margin-top: 1rem; padding: 10px; background: #f9f9f9; border-radius: 4px;"></div>
             
+            <div class="form-group" style="margin-top: 1rem;">
+                <label for="precio-unitario-input">Precio Unitario ($):</label>
+                <input type="number" id="precio-unitario-input" name="precio_unitario" step="0.01" required />
+            </div>
+
             <div class="form-group">
-                <label for="monto-input">Importe a Cobrar ($):</label>
+                <label for="monto-pactado-input">Valor del Abono (Total $):</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="number" id="monto-pactado-input" name="monto_pactado" step="0.01" style="flex: 1;" required />
+                    <span id="original-price-hint" style="text-decoration: line-through; color: gray; font-size: 0.9rem; display: none;"></span>
+                    <span id="discount-badge" class="badge" style="background: #28a745; color: white; display: none;">0% OFF</span>
+                </div>
+                <small class="text-muted">Valor final del abono para este alumno.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="monto-input">Importe que paga HOY ($):</label>
                 <input type="number" id="monto-input" name="monto" step="0.01" required />
+            </div>
+
+            <div id="debt-suggestion-container" class="form-group" style="display: none; background: #fff3cd; padding: 10px; border: 1px solid #ffeeba; border-radius: 4px; margin-bottom: 1rem;">
+                <p id="debt-suggestion-text" style="margin-bottom: 0.5rem; color: #856404; font-weight: bold;"></p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="generar-deuda-checkbox" checked>
+                    <label class="form-check-label" for="generar-deuda-checkbox" style="font-weight: 500;">
+                        Generar deuda por el saldo pendiente
+                    </label>
+                </div>
             </div>
 
             <div class="form-group">
@@ -760,6 +791,21 @@ export class PracticanteDetail {
     if (paymentForm) {
         paymentForm.addEventListener('submit', this.handlePaymentSubmit.bind(this));
     }
+
+    const montoInput = this.container.querySelector('#monto-input');
+    if (montoInput) {
+        montoInput.addEventListener('input', this.calculateFinalAmount.bind(this));
+    }
+
+    const montoPactadoInput = this.container.querySelector('#monto-pactado-input');
+    if (montoPactadoInput) {
+        montoPactadoInput.addEventListener('input', this.calculateFinalAmount.bind(this));
+    }
+
+    const precioUnitarioInput = this.container.querySelector('#precio-unitario-input');
+    if (precioUnitarioInput) {
+        precioUnitarioInput.addEventListener('input', this.calculateFinalAmount.bind(this));
+    }
   }
 
   updateAbonoDetails() {
@@ -832,11 +878,22 @@ export class PracticanteDetail {
 
         // Update the editable amount input
         const montoInput = this.container.querySelector('#monto-input');
+        const montoPactadoInput = this.container.querySelector('#monto-pactado-input');
+        const precioUnitarioInput = this.container.querySelector('#precio-unitario-input');
+        
+        // Initialize pricing with template defaults
+        if (precioUnitarioInput) {
+            precioUnitarioInput.value = precioUnitario.toFixed(2);
+        }
+        if (montoPactadoInput) {
+            montoPactadoInput.value = totalAbono.toFixed(2);
+        }
+
         const ncSelect = this.container.querySelector('#nota-credito-select');
         const selectedNc = ncSelect ? ncSelect.options[ncSelect.selectedIndex] : null;
         const ncAmount = (selectedNc && selectedNc.value) ? parseFloat(selectedNc.dataset.monto) : 0;
         
-        // Store current suggested amount as original base
+        // Store current suggested amount as original base (List Price)
         this.originalAmount = totalAbono;
         this.calculateFinalAmount();
     } else {
@@ -844,7 +901,11 @@ export class PracticanteDetail {
         mesAbonoGroup.style.display = 'none';
         fechaVencimientoInput.value = '';
         const montoInput = this.container.querySelector('#monto-input');
+        const montoPactadoInput = this.container.querySelector('#monto-pactado-input');
+        const precioUnitarioInput = this.container.querySelector('#precio-unitario-input');
         if (montoInput) montoInput.value = '';
+        if (montoPactadoInput) montoPactadoInput.value = '';
+        if (precioUnitarioInput) precioUnitarioInput.value = '';
     }
   }
 
@@ -886,6 +947,8 @@ export class PracticanteDetail {
     const nota_credito_ids = Array.from(ncCheckboxes).map(cb => parseInt(cb.value, 10));
     const notas = notasTextarea.value;
     const monto = montoInput.value;
+    const montoPactadoInput = paymentForm.querySelector('#monto-pactado-input');
+    const generarDeuda = paymentForm.querySelector('#generar-deuda-checkbox').checked;
 
     if (errorMessageElement) {
         errorMessageElement.style.display = 'none';
@@ -919,10 +982,13 @@ export class PracticanteDetail {
             return;
         }
 
+        const pactAmount = montoPactadoInput ? parseFloat(montoPactadoInput.value) : parseFloat(monto);
+
         const payload = { 
             tipo_abono_id: parseInt(tipo_abono_id, 10), 
             cantidad: parseInt(cantidad, 10),
             monto: parseFloat(monto),
+            monto_pactado: pactAmount,
             mes_abono: mes_abono,
             fecha_vencimiento,
             fecha_pago,
@@ -931,6 +997,16 @@ export class PracticanteDetail {
             nota_credito_ids,
             notas 
         };
+
+        // If user explicitly unchecked "Generate debt", we override monto_pactado to 
+        // what they are paying now (Paid amount + Credit Notes applied)
+        if (!generarDeuda) {
+            let totalNC = 0;
+            ncCheckboxes.forEach(cb => {
+                totalNC += parseFloat(cb.dataset.monto);
+            });
+            payload.monto_pactado = parseFloat(monto) + totalNC;
+        }
 
         await makeRequest(
             `/practicantes/${this.practicante.id}/pagar`,
@@ -1094,22 +1170,81 @@ export class PracticanteDetail {
     this.updateAbonoDetails();
   }
 
-  calculateFinalAmount() {
+  calculateFinalAmount(event) {
     const form = this.container.querySelector('#payment-form');
     const montoInput = form.querySelector('#monto-input');
+    const montoPactadoInput = form.querySelector('#monto-pactado-input');
+    const precioUnitarioInput = form.querySelector('#precio-unitario-input');
+    const cantidadInput = form.querySelector('#cantidad-input');
+    const discountBadge = form.querySelector('#discount-badge');
     const checkboxes = form.querySelectorAll('.nc-checkbox:checked');
     const info = form.querySelector('#nc-info');
+    const debtSuggestionContainer = form.querySelector('#debt-suggestion-container');
+    const debtSuggestionText = form.querySelector('#debt-suggestion-text');
 
     let totalNC = 0;
     checkboxes.forEach(cb => {
         totalNC += parseFloat(cb.dataset.monto);
     });
 
-    const baseAmount = this.originalAmount || 0;
-    const finalAmount = Math.max(0, baseAmount - totalNC);
+    const cantidad = parseInt(cantidadInput.value, 10) || 1;
+    const listPriceTotal = this.originalAmount || 0;
+    const listUnitPrice = listPriceTotal / cantidad;
+
+    // Cross-update logic: Unit Price <-> Total Value
+    if (event) {
+        if (event.target.id === 'precio-unitario-input') {
+            const up = parseFloat(precioUnitarioInput.value) || 0;
+            montoPactadoInput.value = (up * cantidad).toFixed(2);
+        } else if (event.target.id === 'monto-pactado-input') {
+            const tot = parseFloat(montoPactadoInput.value) || 0;
+            precioUnitarioInput.value = (tot / cantidad).toFixed(2);
+        }
+    }
+
+    const pactAmount = montoPactadoInput ? (parseFloat(montoPactadoInput.value) || 0) : listPriceTotal;
+    const originalPriceHint = form.querySelector('#original-price-hint');
     
-    if (montoInput) {
-        montoInput.value = finalAmount.toFixed(2);
+    // Calculate and show discount percentage based on unit price
+    if (listUnitPrice > 0) {
+        const currentUnitPrice = pactAmount / cantidad;
+        if (currentUnitPrice < listUnitPrice - 0.01) {
+            const discountPercent = Math.round((1 - (currentUnitPrice / listUnitPrice)) * 100);
+            if (discountBadge) {
+                discountBadge.textContent = `${discountPercent}% OFF`;
+                discountBadge.style.display = 'inline-block';
+            }
+            if (originalPriceHint) {
+                originalPriceHint.textContent = `$${listPriceTotal.toFixed(2)}`;
+                originalPriceHint.style.display = 'inline-block';
+            }
+        } else {
+            if (discountBadge) discountBadge.style.display = 'none';
+            if (originalPriceHint) originalPriceHint.style.display = 'none';
+        }
+    }
+
+    const suggestedPayment = Math.max(0, pactAmount - totalNC);
+    
+    // Only update montoInput value if the event is NOT from payment inputs
+    const shouldUpdatePayment = !event || (
+        event.target.id !== 'monto-input' && 
+        event.target.id !== 'monto-pactado-input' && 
+        event.target.id !== 'precio-unitario-input'
+    );
+    
+    if (montoInput && shouldUpdatePayment) {
+        montoInput.value = suggestedPayment.toFixed(2);
+    }
+
+    const currentMonto = parseFloat(montoInput.value) || 0;
+    const pendingBalance = pactAmount - (currentMonto + totalNC);
+
+    if (pendingBalance > 0.01) {
+        debtSuggestionContainer.style.display = 'block';
+        debtSuggestionText.textContent = `Saldo pendiente detectado: $${pendingBalance.toFixed(2)}`;
+    } else {
+        debtSuggestionContainer.style.display = 'none';
     }
 
     if (totalNC > 0) {
@@ -1221,7 +1356,11 @@ export class PracticanteDetail {
                                 // El "último pago" es el primero que encontramos en el array 'pagos' (que está en DESC)
                                 const esUltimoPago = pagos.find(pg => pg.abono_id === pago.abono_id).id === pago.id;
                                 
-                                if (saldoPendienteAlMomento > 0.01) {
+                                if (abonoInfo.estado === 'cancelado') {
+                                    balanceHtml = '<span class="badge badge-success">Pagado</span>';
+                                    // Remove "Abonar" button but keep "Delete"
+                                    actionsHtml = `<button class="btn btn-danger btn-sm delete-pago-btn" data-id="${pago.id}" title="Eliminar"><i class="fas fa-trash"></i></button>`;
+                                } else if (saldoPendienteAlMomento > 0.01) {
                                     if (esUltimoPago) {
                                         balanceHtml = `<span class="text-danger" style="font-weight:bold;">Debe $${saldoPendienteAlMomento.toFixed(2)}</span>`;
                                         actionsHtml = `
@@ -1231,12 +1370,6 @@ export class PracticanteDetail {
                                     } else {
                                         balanceHtml = `<span class="text-muted">Parcial (Saldo: $${saldoPendienteAlMomento.toFixed(2)})</span>`;
                                     }
-                                    
-                                    if (abonoInfo.estado === 'cancelado') {
-                                        balanceHtml += ' <br><small class="badge badge-secondary" style="font-size: 0.65rem;">Cancelado</small>';
-                                    }
-                                } else if (abonoInfo.estado === 'cancelado') {
-                                    balanceHtml = '<span class="badge badge-secondary">Cancelado</span>';
                                 } else if (saldoPendienteAlMomento < -0.01) {
                                     // Para saldos a favor, solo mostrar el detalle en el último registro para evitar confusión
                                     if (esUltimoPago) {
