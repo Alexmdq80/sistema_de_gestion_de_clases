@@ -103,7 +103,6 @@ class AsistenciaService
                         AND ab.estado = 'activo' 
                         AND ab.deleted_at IS NULL
                         AND ab.fecha_inicio <= ?
-                        AND ab.fecha_vencimiento >= ?
                 ) as abono_nombre,
                 (
                     SELECT IF(COUNT(*) > 0, 1, 0)
@@ -119,6 +118,6 @@ class AsistenciaService
             ORDER BY es_inscripto DESC, p.nombre_completo ASC
         ";
 
-        return DB::select($sql, [$fechaClase, $fechaClase, $horarioId]);
+        return DB::select($sql, [$fechaClase, $horarioId]);
     }
 }
