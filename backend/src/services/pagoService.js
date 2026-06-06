@@ -55,6 +55,9 @@ export class PagoService {
             
             const fechaPagoStr = extraData.fecha_pago || todayStr;
 
+            // 0. Auto-expire old abonos for this student to keep the record clean
+            await Abono.expireOldAbonos(practicanteId, connection, userId);
+
             // 1. Determine start date
             const activeAbono = await Abono.findActiveByPracticanteId(practicanteId, connection);
             let fechaInicio = new Date(today);

@@ -71,4 +71,29 @@ class Abono extends Model
             ->orderBy('fecha_vencimiento', 'desc')
             ->first();
     }
+
+    /**
+     * Marcar como 'vencido' todos los abonos activos cuya fecha de vencimiento ya pasó.
+     */
+    public static function expireOldAbonos($practicanteId, $userId = null)
+    {
+        $oldAbonos = self::where('practicante_id', $practicanteId)
+            ->where('estado', 'activo')
+            ->where('fecha_vencimiento', '<', now()->toDateString())
+            ->get();
+
+        foreach ($oldAbonos as $abono) {
+            $oldData = $abono->toArray();
+            $abono->update(['estado' => 'vencido']);
+
+            // Registrar historial
+            HistorialAbono::create([
+                'abono_id' => $abono->id,
+                'accion' => 'UPDATE',
+                'datos_anteriores' => $oldData,
+                'datos_nuevos' => $abono->fresh()->toArray(),
+                'usuario_id' => $userId
+            ]);
+        }
+    }
 }

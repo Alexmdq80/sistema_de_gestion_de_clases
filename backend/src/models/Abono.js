@@ -108,6 +108,28 @@ export class Abono {
     }
 
     /**
+     * Mark all active abonos for a practicante as 'vencido' if their expiration date has passed.
+     * @param {number} practicanteId 
+     * @param {Object} [connection] 
+     * @param {number} [userId] 
+     * @returns {Promise<void>}
+     */
+    static async expireOldAbonos(practicanteId, connection = null, userId = null) {
+        const executor = connection || pool;
+        
+        // Find all active abonos that have already passed their expiration date
+        const sqlFind = `
+            SELECT id FROM Abono 
+            WHERE practicante_id = ? AND estado = 'activo' AND fecha_vencimiento < CURDATE() AND deleted_at IS NULL
+        `;
+        const [rows] = await executor.execute(sqlFind, [practicanteId]);
+        
+        for (const row of rows) {
+            await this.updateStatus(row.id, 'vencido', executor, userId);
+        }
+    }
+
+    /**
      * Update abono status and record history
      * @param {number} id - Abono ID
      * @param {string} estado - New status

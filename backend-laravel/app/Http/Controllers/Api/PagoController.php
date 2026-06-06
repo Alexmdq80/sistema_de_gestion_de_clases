@@ -238,6 +238,9 @@ class PagoController extends Controller
             $fechaPago = $request->fecha_pago ?: $today->toDateString();
             $cantidad = $request->cantidad ?: 1;
 
+            // 0. Auto-expire old abonos for this student to keep the record clean
+            Abono::expireOldAbonos($id, $userId);
+
             // 1. Determinar fecha de inicio
             $activeAbono = Abono::findActiveByPracticanteId($id);
             $fechaInicio = $today->copy();
