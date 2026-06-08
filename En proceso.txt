@@ -6,4 +6,3 @@ const API_BASE_URL = '/api'; // Apuntando al viejo backend de Node via Vite Prox
 
 PRÓXIMA SESIÓN:
 - Revisar si hay otros lugares donde se creen abonos que necesiten esta lógica.
-- Considerar implementar un comando de consola (cron) para limpiar abonos antiguos diariamente, no solo al crear uno nuevo.

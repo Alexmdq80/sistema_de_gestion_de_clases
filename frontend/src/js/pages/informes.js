@@ -31,6 +31,8 @@ export class InformesPage {
                         <select class="form-control" id="report-type" title="Tipo de Informe">
                             <option value="balance" ${this.currentReport === 'balance' ? 'selected' : ''}>Balance Mensual (Caja + Rentabilidad)</option>
                             <option value="cuotas" ${this.currentReport === 'cuotas' ? 'selected' : ''}>Resumen Cuotas Pagadas</option>
+                            <option value="abonos" ${this.currentReport === 'abonos' ? 'selected' : ''}>Estado de Abonos (Activos/Vencidos)</option>
+                            <option value="ganancia_actividad" ${this.currentReport === 'ganancia_actividad' ? 'selected' : ''}>Ganancia por Actividad</option>
                             <option value="padron" ${this.currentReport === 'padron' ? 'selected' : ''}>Padrón Detallado de Socios</option>
                             <option value="birthday" ${this.currentReport === 'birthday' ? 'selected' : ''}>Listado de Cumpleaños</option>
                             <option value="inscripciones" ${this.currentReport === 'inscripciones' ? 'selected' : ''}>Inscripciones por Horario</option>
@@ -129,7 +131,7 @@ export class InformesPage {
 
             // Ocultar mes/año para informes que no lo necesitan
             const timeFilters = this.container.querySelectorAll('#report-month, #report-year');
-            const displayTime = this.currentReport !== 'inscripciones';
+            const displayTime = !['inscripciones'].includes(this.currentReport);
             timeFilters.forEach(el => el.style.display = displayTime ? 'block' : 'none');
 
             const bdayOptions = this.container.querySelector('#birthday-options-container');
@@ -213,6 +215,12 @@ export class InformesPage {
                 endpoint = '/informes/balance-mensual';
             } else if (this.currentReport === 'cuotas') {
                 endpoint = '/informes/cuotas-sociales';
+            } else if (this.currentReport === 'abonos') {
+                endpoint = '/informes/abonos-estado';
+                // El informe de abonos es general, no depende de un mes/año específico necesariamente
+                // pero podemos enviarlos por si acaso
+            } else if (this.currentReport === 'ganancia_actividad') {
+                endpoint = '/informes/ganancia-actividad';
             } else if (this.currentReport === 'padron') {
                 endpoint = '/informes/padron-socios-pagos';
             } else if (this.currentReport === 'birthday') {
@@ -479,6 +487,10 @@ export class InformesPage {
             this.renderBalanceReport(content);
         } else if (this.currentReport === 'cuotas') {
             this.renderCuotasReport(content);
+        } else if (this.currentReport === 'abonos') {
+            this.renderAbonosEstadoReport(content);
+        } else if (this.currentReport === 'ganancia_actividad') {
+            this.renderGananciaActividadReport(content);
         } else if (this.currentReport === 'padron') {
             this.renderPadronReport(content);
         } else if (this.currentReport === 'birthday') {
@@ -1023,6 +1035,193 @@ export class InformesPage {
                         </tr>
                     </tfoot>
                 </table>
+                ${this.renderReportFooter()}
+            </div>
+        `;
+    }
+
+    renderAbonosEstadoReport(content) {
+        const isSedeFiltered = this.selectedLugarId !== '';
+        const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
+        
+        const badgeColors = {
+            'verde': 'badge-success',
+            'amarillo': 'badge-warning',
+            'rojo': 'badge-danger'
+        };
+
+        const rowStyles = {
+            'verde': '',
+            'amarillo': 'background-color: rgba(255, 193, 7, 0.05);',
+            'rojo': 'background-color: rgba(220, 53, 69, 0.05); color: #721c24;'
+        };
+
+        content.innerHTML = `
+            <div class="report-paper p-4 bg-white border">
+                ${this.renderReportHeader('Estado de Abonos', `Alumnos Activos - Sede: ${sedeNombre}`)}
+                
+                <div class="mb-4 no-print flex justify-between align-items-center bg-light p-3 rounded">
+                    <div class="flex gap-4">
+                        <span class="badge badge-success px-3 py-2">VERDE: Activo</span>
+                        <span class="badge badge-warning px-3 py-2">AMARILLO: Vence pronto (≤ 7 días)</span>
+                        <span class="badge badge-danger px-3 py-2">ROJO: Vencido</span>
+                    </div>
+                </div>
+
+                <table class="table table-sm table-hover border">
+                    <thead class="thead-light">
+                        <tr>
+                            <th>Alumno</th>
+                            <th>Tipo de Abono</th>
+                            ${!isSedeFiltered ? '<th>Sede</th>' : ''}
+                            <th class="text-center">Vencimiento</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-right">Saldo Pend.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${this.data.map(item => {
+                            const saldo = parseFloat(item.saldo_pendiente);
+                            const saldoClass = saldo > 0 ? 'text-danger font-weight-bold' : 'text-muted';
+                            
+                            return `
+                            <tr style="${rowStyles[item.semaforo]}">
+                                <td class="font-weight-bold">${item.practicante_nombre}</td>
+                                <td>${item.tipo_abono_nombre}</td>
+                                ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
+                                <td class="text-center">${formatDateDashes(item.fecha_vencimiento)}</td>
+                                <td class="text-center">
+                                    <span class="badge ${badgeColors[item.semaforo]} px-3" style="font-size: 0.85rem; width: 120px;">
+                                        ${item.estado_actual.toUpperCase()}
+                                    </span>
+                                    ${item.semaforo === 'amarillo' || item.semaforo === 'rojo' ? `<br><small class="font-weight-bold">${item.dias_para_vencer < 0 ? 'Hace ' + Math.abs(item.dias_para_vencer) + ' días' : 'En ' + item.dias_para_vencer + ' días'}</small>` : ''}
+                                </td>
+                                <td class="text-right ${saldoClass}">
+                                    ${saldo > 0 ? '$' + saldo.toFixed(2) : '-'}
+                                </td>
+                            </tr>
+                        `}).join('')}
+                    </tbody>
+                </table>
+                
+                <div class="mt-4 p-3 bg-light border-left border-info rounded">
+                    <i class="fas fa-info-circle text-info mr-2"></i>
+                    <strong>Nota:</strong> Este informe solo incluye practicantes marcados como "Activos". Los abonos se consideran vencidos si la fecha actual es posterior a su fecha de vencimiento.
+                </div>
+
+                ${this.renderReportFooter()}
+            </div>
+        `;
+    }
+
+    renderGananciaActividadReport(content) {
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const isSedeFiltered = this.selectedLugarId !== '';
+        const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
+        const d = this.data;
+
+        const totalGeneral = Object.values(d).reduce((acc, cat) => acc + cat.total, 0);
+        const totalPagos = Object.values(d).reduce((acc, cat) => acc + cat.pagos, 0);
+
+        content.innerHTML = `
+            <div class="report-paper p-4 bg-white border">
+                ${this.renderReportHeader('Ganancia Mensual por Actividad', `${sedeNombre} - Periodo: ${monthNames[this.selectedMonth - 1]} ${this.selectedYear}`)}
+                
+                <div class="grid grid-2 gap-4 mb-5 no-print">
+                    <div class="card p-4 bg-light border-primary shadow-sm text-center">
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Recaudación Total</h4>
+                        <h2 class="text-primary" style="font-size: 2.5rem; font-weight: 800;">$${totalGeneral.toFixed(2)}</h2>
+                    </div>
+                    <div class="card p-4 bg-light border-secondary shadow-sm text-center">
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Total de Abonos Vendidos</h4>
+                        <h2 class="text-secondary" style="font-size: 2.5rem; font-weight: 800;">${totalPagos}</h2>
+                    </div>
+                </div>
+
+                <div class="report-body">
+                    ${Object.entries(d).map(([key, cat]) => {
+                        if (cat.total === 0 && cat.detalles.length === 0 && cat.horas_grupales === 0 && cat.horas_flexibles === 0) return '';
+                        
+                        const costoSalonTotal = cat.costo_salon_grupal + cat.costo_salon_flexible;
+                        const margenNeto = cat.total - costoSalonTotal;
+                        const pctMargen = cat.total > 0 ? (margenNeto / cat.total) * 100 : 0;
+                        const horasTotales = cat.horas_grupales + cat.horas_flexibles;
+
+                        return `
+                        <div class="activity-section mb-5" style="page-break-inside: avoid; border: 1px solid #ddd; border-radius: 10px; padding: 1.5rem;">
+                            <div class="flex justify-between align-items-center border-bottom pb-3 mb-4">
+                                <div>
+                                    <h2 class="mb-0" style="color: var(--primary-color); font-weight: 800;">${cat.nombre}${key === 'otros' ? ' (Inc. Particulares)' : ''}</h2>
+                                    <div class="mt-1">
+                                        <span class="badge badge-info mr-2" title="Grupales: ${cat.horas_grupales.toFixed(1)}h | Particulares: ${cat.horas_flexibles.toFixed(1)}h">
+                                            ${horasTotales.toFixed(1)} Horas dictadas
+                                        </span>
+                                        <span class="badge badge-secondary">${cat.pagos} Abonos vendidos</span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="small text-muted text-uppercase font-weight-bold">Margen Neto</div>
+                                    <h3 class="mb-0 ${margenNeto >= 0 ? 'text-success' : 'text-danger'}" style="font-size: 1.75rem; font-weight: 800;">$${margenNeto.toFixed(2)}</h3>
+                                    <small class="font-weight-bold text-muted">${pctMargen.toFixed(1)}% de rentabilidad</small>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-4 gap-4 mb-4 text-center">
+                                <div class="p-2 border rounded">
+                                    <small class="text-muted text-uppercase d-block mb-1">Costo Grupales</small>
+                                    <span class="font-weight-bold text-danger">$${cat.costo_salon_grupal.toFixed(2)}</span>
+                                    <small class="d-block text-muted">${cat.horas_grupales.toFixed(1)}h</small>
+                                </div>
+                                <div class="p-2 border rounded">
+                                    <small class="text-muted text-uppercase d-block mb-1">Costo Partic.</small>
+                                    <span class="font-weight-bold text-danger">$${cat.costo_salon_flexible.toFixed(2)}</span>
+                                    <small class="d-block text-muted">${cat.horas_flexibles.toFixed(1)}h</small>
+                                </div>
+                                <div class="p-2 border rounded bg-light">
+                                    <small class="text-muted text-uppercase d-block mb-1">Total Ingresos</small>
+                                    <span class="font-weight-bold text-success">$${cat.total.toFixed(2)}</span>
+                                </div>
+                                <div class="p-2 border rounded bg-light">
+                                    <small class="text-muted text-uppercase d-block mb-1">Margen / Hora</small>
+                                    <span class="font-weight-bold text-primary">$${horasTotales > 0 ? (margenNeto / horasTotales).toFixed(2) : '0.00'}</span>
+                                </div>
+                            </div>
+                            
+                            <h5 class="mb-3 small font-weight-bold text-muted text-uppercase">Desglose de Ingresos</h5>
+                            <table class="table table-sm table-striped border-top">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th>Tipo de Abono / Concepto</th>
+                                        <th class="text-center">Categoría</th>
+                                        <th class="text-center">Cant.</th>
+                                        <th class="text-right">Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${cat.detalles.map(item => `
+                                        <tr>
+                                            <td>${item.nombre}</td>
+                                            <td class="text-center">
+                                                <span class="badge badge-light">
+                                                    ${item.categoria === 'grupal' ? 'Grupal' : 'Particular/Flexible'}
+                                                </span>
+                                            </td>
+                                            <td class="text-center">${item.pagos}</td>
+                                            <td class="text-right">$${item.total.toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <div class="mt-5 p-4 border-dark rounded bg-dark text-white text-right">
+                    <h4 class="mb-1 text-uppercase small" style="opacity: 0.8;">Total General Recaudado</h4>
+                    <h2 class="mb-0" style="font-size: 2.5rem; font-weight: 800;">$${totalGeneral.toFixed(2)}</h2>
+                </div>
+
                 ${this.renderReportFooter()}
             </div>
         `;

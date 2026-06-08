@@ -458,4 +458,299 @@ router.get('/inscripciones-horarios', asyncHandler(async (req, res) => {
     res.json({ data: reportData });
 }));
 
+/**
+ * GET /api/informes/abonos-estado
+ * Reporte de abonos activos y vencidos con semáforo visual
+ */
+router.get('/abonos-estado', asyncHandler(async (req, res) => {
+    const { lugar_id, search = '', mes, anio } = req.query;
+
+    let sql = `
+        SELECT 
+            a.id,
+            p.nombre_completo as practicante_nombre,
+            ta.nombre as tipo_abono_nombre,
+            l.nombre as lugar_nombre,
+            a.fecha_inicio,
+            a.fecha_vencimiento,
+            a.estado as estado_db,
+            a.cantidad,
+            a.monto_pactado,
+            (SELECT IFNULL(SUM(pg.monto), 0) FROM Pago pg WHERE pg.abono_id = a.id AND pg.deleted_at IS NULL) as total_pagado_efectivo,
+            (
+                SELECT IFNULL(SUM(mc.monto), 0) 
+                FROM MovimientoCaja mc 
+                JOIN Pago pg2 ON mc.usado_en_pago_id = pg2.id 
+                WHERE pg2.abono_id = a.id AND mc.deleted_at IS NULL AND pg2.deleted_at IS NULL
+            ) as total_notas_credito,
+            (
+                SELECT IFNULL(SUM(d.monto), 0)
+                FROM Deuda d
+                WHERE d.practicante_id = a.practicante_id 
+                  AND d.estado = 'pendiente'
+                  AND d.deleted_at IS NULL
+                  AND (d.concepto LIKE CONCAT('%', a.mes_abono, '%') OR d.concepto LIKE '%abono%')
+            ) as saldo_deuda_explicit,
+            DATEDIFF(a.fecha_vencimiento, CURDATE()) as dias_para_vencer
+        FROM Abono a
+        JOIN Practicante p ON a.practicante_id = p.id
+        JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
+        JOIN Lugar l ON a.lugar_id = l.id
+        WHERE a.deleted_at IS NULL 
+          AND p.deleted_at IS NULL
+          AND p.activo = 1
+    `;
+    const params = [];
+
+    if (mes && anio) {
+        const lastDayOfMonth = new Date(anio, mes, 0).toISOString().split('T')[0];
+        sql += ` AND (
+            (MONTH(a.fecha_inicio) = ? AND YEAR(a.fecha_inicio) = ?)
+            OR (MONTH(a.fecha_vencimiento) = ? AND YEAR(a.fecha_vencimiento) = ?)
+            OR (a.fecha_vencimiento < ? AND a.estado != 'cancelado')
+        )`;
+        params.push(parseInt(mes, 10), parseInt(anio, 10), parseInt(mes, 10), parseInt(anio, 10), lastDayOfMonth);
+    }
+
+    // Regla de visualización: 
+    // 1. Si el abono está activo y vigente hoy, se muestra.
+    // 2. Si no hay ningún abono activo hoy para esa persona, se muestra solo el más reciente (el que genera la deuda).
+    sql += ` AND (
+        (a.estado = 'activo' AND a.fecha_vencimiento >= CURDATE())
+        OR 
+        (
+            NOT EXISTS (
+                SELECT 1 FROM Abono a2 
+                WHERE a2.practicante_id = a.practicante_id 
+                  AND a2.id != a.id
+                  AND a2.estado = 'activo' 
+                  AND a2.fecha_vencimiento >= CURDATE()
+                  AND a2.deleted_at IS NULL
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM Abono a3
+                WHERE a3.practicante_id = a.practicante_id
+                  AND a3.id > a.id
+                  AND a3.deleted_at IS NULL
+            )
+        )
+    )`;
+
+    if (lugar_id) {
+        sql += ' AND (l.id = ? OR l.parent_id = ?)';
+        params.push(lugar_id, lugar_id);
+    }
+
+    if (search) {
+        sql += ' AND p.nombre_completo LIKE ?';
+        params.push(`%${search}%`);
+    }
+
+    sql += ' ORDER BY a.fecha_vencimiento ASC';
+
+    const [rows] = await pool.execute(sql, params);
+
+    // Procesar semáforo en el backend para simplificar el frontend
+    const data = rows.map(row => {
+        let semaforo = 'verde';
+        let estado_actual = 'Activo';
+
+        if (row.estado_db === 'vencido' || row.estado_db === 'cancelado' || row.dias_para_vencer < 0) {
+            semaforo = 'rojo';
+            estado_actual = row.estado_db === 'cancelado' ? 'Cancelado' : 'Vencido';
+        } else if (row.dias_para_vencer <= 7) {
+            semaforo = 'amarillo';
+            estado_actual = 'Próximo a vencer';
+        }
+
+        return {
+            ...row,
+            semaforo,
+            estado_actual,
+            total_pagado: parseFloat(row.total_pagado_efectivo || 0) + parseFloat(row.total_notas_credito || 0),
+            saldo_pendiente: parseFloat(row.saldo_deuda_explicit || 0)
+        };
+    });
+
+    res.json({ data });
+}));
+
+/**
+ * GET /api/informes/ganancia-actividad
+ * Reporte de ingresos discriminados por actividad (Tai Chi, Chi Kung/Yoga, Libre)
+ */
+router.get('/ganancia-actividad', asyncHandler(async (req, res) => {
+    const { mes, anio, lugar_id } = req.query;
+    if (!mes || !anio) throw new AppError('Mes y año son obligatorios', 400);
+
+    let sql = `
+        SELECT 
+            ta.nombre as tipo_abono_nombre,
+            ta.categoria as tipo_abono_categoria,
+            SUM(p.monto) as total_recaudado,
+            COUNT(p.id) as cantidad_pagos
+        FROM Pago p
+        JOIN Abono ab ON p.abono_id = ab.id
+        JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
+        LEFT JOIN Lugar l ON p.lugar_id = l.id
+        WHERE p.deleted_at IS NULL
+          AND MONTH(p.fecha) = ? 
+          AND YEAR(p.fecha) = ?
+    `;
+    const params = [parseInt(mes, 10), parseInt(anio, 10)];
+
+    if (lugar_id) {
+        sql += ' AND (p.lugar_id = ? OR l.parent_id = ?)';
+        params.push(lugar_id, lugar_id);
+    }
+
+    sql += ' GROUP BY ta.nombre, ta.categoria';
+
+    const [rows] = await pool.execute(sql, params);
+
+    // --- NUEVA LÓGICA DE COSTOS POR ACTIVIDAD ---
+    const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
+
+    let sqlClases = `
+        SELECT 
+            c.tipo as clase_tipo,
+            act.nombre as actividad_nombre,
+            l.costo_tarifa,
+            l.tipo_tarifa,
+            SUM(TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora))) / 3600 as horas
+        FROM Clase c
+        JOIN Actividad act ON c.actividad_id = act.id
+        JOIN Lugar l ON c.lugar_id = l.id
+        WHERE c.deleted_at IS NULL 
+          AND c.estado NOT IN ('cancelada', 'suspendida', 'sin_actividad')
+          AND c.fecha >= ? AND c.fecha <= ?
+    `;
+    const paramsClases = [firstDay, lastDay];
+
+    if (lugar_id) {
+        sqlClases += ' AND (c.lugar_id = ? OR l.parent_id = ?)';
+        paramsClases.push(lugar_id, lugar_id);
+    }
+    sqlClases += ' GROUP BY c.tipo, act.nombre, l.costo_tarifa, l.tipo_tarifa';
+
+    const [rowsClases] = await pool.execute(sqlClases, paramsClases);
+
+    // Clasificación por actividad
+    const resumen = {
+        tai_chi: { nombre: 'Tai Chi Chuan', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
+        chi_kung_yoga: { nombre: 'Chi Kung y Yoga Suave', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
+        libre: { nombre: 'Libre / Combinado', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
+        otros: { nombre: 'Otros', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] }
+    };
+
+    // Procesar Ingresos
+    rows.forEach(row => {
+        const nombre = row.tipo_abono_nombre.toLowerCase();
+        const categoria = row.tipo_abono_categoria; // 'grupal', 'particular', 'compartida'
+        const monto = parseFloat(row.total_recaudado);
+        const pagos = parseInt(row.cantidad_pagos);
+        const item = { 
+            nombre: row.tipo_abono_nombre, 
+            total: monto, 
+            pagos: pagos,
+            categoria: categoria 
+        };
+
+        // Si NO es grupal, va directo a "otros" (clases particulares/compartidas)
+        if (categoria !== 'grupal') {
+            resumen.otros.total += monto;
+            resumen.otros.pagos += pagos;
+            resumen.otros.detalles.push(item);
+        } else if (nombre.includes('libre') || nombre.includes('combinado')) {
+            resumen.libre.total += monto;
+            resumen.libre.pagos += pagos;
+            resumen.libre.detalles.push(item);
+        } else if (nombre.includes('tai chi') || nombre.includes('taichi')) {
+            resumen.tai_chi.total += monto;
+            resumen.tai_chi.pagos += pagos;
+            resumen.tai_chi.detalles.push(item);
+        } else if (nombre.includes('chi kung') || nombre.includes('chikung') || nombre.includes('yoga') || nombre.includes('suave')) {
+            resumen.chi_kung_yoga.total += monto;
+            resumen.chi_kung_yoga.pagos += pagos;
+            resumen.chi_kung_yoga.detalles.push(item);
+        } else {
+            resumen.otros.total += monto;
+            resumen.otros.pagos += pagos;
+            resumen.otros.detalles.push(item);
+        }
+    });
+
+    // Procesar Horas y Costos
+    rowsClases.forEach(row => {
+        const nombre = row.actividad_nombre.toLowerCase();
+        const horas = parseFloat(row.horas || 0);
+        const costoUnitario = parseFloat(row.costo_tarifa || 0);
+        const costoTotal = row.tipo_tarifa === 'por_hora' ? (horas * costoUnitario) : costoUnitario;
+
+        let actKey = 'otros';
+
+        // Solo clasificamos por actividad si la clase es GRUPAL
+        if (row.clase_tipo === 'grupal') {
+            if (nombre.includes('tai chi') || nombre.includes('taichi')) {
+                actKey = 'tai_chi';
+            } else if (nombre.includes('chi kung') || nombre.includes('chikung') || nombre.includes('yoga') || nombre.includes('suave')) {
+                actKey = 'chi_kung_yoga';
+            } else if (nombre.includes('libre') || nombre.includes('combinado')) {
+                actKey = 'libre';
+            }
+            
+            resumen[actKey].horas_grupales += horas;
+            resumen[actKey].costo_salon_grupal += costoTotal;
+        } else {
+            // Si es flexible (particular), va siempre a "otros"
+            resumen.otros.horas_flexibles += horas;
+            resumen.otros.costo_salon_flexible += costoTotal;
+        }
+    });
+
+    // --- REDISTRIBUCIÓN PROPORCIONAL DE INGRESOS "LIBRE" ---
+    if (resumen.libre.total > 0) {
+        const hTC = resumen.tai_chi.horas_grupales;
+        const hCKY = resumen.chi_kung_yoga.horas_grupales;
+        const totalH = hTC + hCKY;
+
+        if (totalH > 0) {
+            const ratioTC = hTC / totalH;
+            const ratioCKY = hCKY / totalH;
+            const montoLibre = resumen.libre.total;
+            const pagosLibre = resumen.libre.pagos;
+
+            // Distribuir montos
+            resumen.tai_chi.total += montoLibre * ratioTC;
+            resumen.chi_kung_yoga.total += montoLibre * ratioCKY;
+
+            // Registrar la distribución en detalles para transparencia
+            if (montoLibre * ratioTC > 0) {
+                resumen.tai_chi.detalles.push({
+                    nombre: `Ingreso Proporcional de Abonos Libres`,
+                    total: montoLibre * ratioTC,
+                    pagos: pagosLibre,
+                    categoria: 'distribucion'
+                });
+            }
+            if (montoLibre * ratioCKY > 0) {
+                resumen.chi_kung_yoga.detalles.push({
+                    nombre: `Ingreso Proporcional de Abonos Libres`,
+                    total: montoLibre * ratioCKY,
+                    pagos: pagosLibre,
+                    categoria: 'distribucion'
+                });
+            }
+
+            // Limpiar categoría Libre (ya está distribuida)
+            resumen.libre.total = 0;
+            resumen.libre.pagos = 0;
+            resumen.libre.detalles = [];
+        }
+    }
+
+    res.json({ data: resumen });
+}));
+
 export default router;

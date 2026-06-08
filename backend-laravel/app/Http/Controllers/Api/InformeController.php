@@ -218,4 +218,321 @@ class InformeController extends Controller
 
         return response()->json(['data' => $reportData]);
     }
+
+    /**
+     * Reporte de Estado de Abonos (Activos y Vencidos).
+     * Sincronizado con la lógica de Node.js.
+     */
+    public function abonosEstado(Request $request)
+    {
+        $mes = $request->mes;
+        $anio = $request->anio;
+        $lugar_id = $request->lugar_id;
+        $search = $request->search;
+
+        $lastDayOfMonth = null;
+        if ($mes && $anio) {
+            $lastDayOfMonth = Carbon::create($anio, $mes, 1)->endOfMonth()->toDateString();
+        }
+
+        $query = \App\Models\Abono::query()
+            ->join('Practicante', 'Abono.practicante_id', '=', 'Practicante.id')
+            ->join('TipoAbono', 'Abono.tipo_abono_id', '=', 'TipoAbono.id')
+            ->join('Lugar', 'Abono.lugar_id', '=', 'Lugar.id')
+            ->select([
+                'Abono.id',
+                'Practicante.nombre_completo as practicante_nombre',
+                'TipoAbono.nombre as tipo_abono_nombre',
+                'Lugar.nombre as lugar_nombre',
+                'Abono.fecha_inicio',
+                'Abono.fecha_vencimiento',
+                'Abono.estado as estado_db',
+                'Abono.cantidad',
+                'Abono.monto_pactado',
+                'Abono.mes_abono',
+                'Abono.practicante_id',
+                DB::raw('DATEDIFF(Abono.fecha_vencimiento, CURDATE()) as dias_para_vencer')
+            ])
+            ->whereNull('Abono.deleted_at')
+            ->whereNull('Practicante.deleted_at')
+            ->where('Practicante.activo', 1);
+
+        // 1. Filtros de búsqueda y lugar
+        if ($search) {
+            $query->where('Practicante.nombre_completo', 'LIKE', "%{$search}%");
+        }
+
+        if ($lugar_id) {
+            $query->where(function($q) use ($lugar_id) {
+                $q->where('Lugar.id', $lugar_id)
+                  ->orWhere('Lugar.parent_id', $lugar_id);
+            });
+        }
+
+        // 2. Filtros de Fecha (Mes/Año + Deudas)
+        if ($mes && $anio) {
+            $query->where(function($q) use ($mes, $anio, $lastDayOfMonth) {
+                $q->where(function($sq) use ($mes, $anio) {
+                    $sq->whereMonth('Abono.fecha_inicio', $mes)
+                       ->whereYear('Abono.fecha_inicio', $anio);
+                })
+                ->orWhere(function($sq) use ($mes, $anio) {
+                    $sq->whereMonth('Abono.fecha_vencimiento', $mes)
+                       ->whereYear('Abono.fecha_vencimiento', $anio);
+                })
+                ->orWhere(function($sq) use ($lastDayOfMonth) {
+                    $sq->where('Abono.fecha_vencimiento', '<', $lastDayOfMonth)
+                       ->where('Abono.estado', '!=', 'cancelado');
+                });
+            });
+        }
+
+        // 3. Regla de visualización: Ocultar viejos si hay uno nuevo activo
+        $query->where(function($q) {
+            $q->where(function($sq) {
+                $sq->where('Abono.estado', 'activo')
+                   ->where('Abono.fecha_vencimiento', '>=', now()->toDateString());
+            })
+            ->orWhere(function($sq) {
+                // No tiene ningún abono activo vigente
+                $sq->whereNotExists(function($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('Abono as a2')
+                        ->whereRaw('a2.practicante_id = Abono.practicante_id')
+                        ->whereRaw('a2.id != Abono.id')
+                        ->where('a2.estado', 'activo')
+                        ->where('a2.fecha_vencimiento', '>=', now()->toDateString())
+                        ->whereNull('a2.deleted_at');
+                })
+                // Y es el abono más reciente (el que genera la deuda)
+                ->whereNotExists(function($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('Abono as a3')
+                        ->whereRaw('a3.practicante_id = Abono.practicante_id')
+                        ->whereRaw('a3.id > Abono.id')
+                        ->whereNull('a3.deleted_at');
+                });
+            });
+        });
+
+        $rows = $query->orderBy('Abono.fecha_vencimiento', 'ASC')->get();
+
+        $data = $rows->map(function($row) {
+            $semaforo = 'verde';
+            $estado_actual = 'Activo';
+
+            if ($row->estado_db === 'vencido' || $row->estado_db === 'cancelado' || $row->dias_para_vencer < 0) {
+                $semaforo = 'rojo';
+                $estado_actual = $row->estado_db === 'cancelado' ? 'Cancelado' : 'Vencido';
+            } elseif ($row->dias_para_vencer <= 7) {
+                $semaforo = 'amarillo';
+                $estado_actual = 'Próximo a vencer';
+            }
+
+            // Obtener saldo de deuda explícita (sincronizado con Node.js)
+            $saldoDeuda = \App\Models\Deuda::where('practicante_id', $row->practicante_id)
+                ->where('estado', 'pendiente')
+                ->whereNull('deleted_at')
+                ->where(function($q) use ($row) {
+                    if ($row->mes_abono) {
+                        $q->where('concepto', 'LIKE', "%{$row->mes_abono}%");
+                    }
+                    $q->orWhere('concepto', 'LIKE', '%abono%');
+                })
+                ->sum('monto');
+
+            return [
+                'id' => $row->id,
+                'practicante_nombre' => $row->practicante_nombre,
+                'tipo_abono_nombre' => $row->tipo_abono_nombre,
+                'lugar_nombre' => $row->lugar_nombre,
+                'fecha_inicio' => $row->fecha_inicio->toDateString(),
+                'fecha_vencimiento' => $row->fecha_vencimiento->toDateString(),
+                'estado_db' => $row->estado_db,
+                'cantidad' => $row->cantidad,
+                'monto_pactado' => (float)$row->monto_pactado,
+                'dias_para_vencer' => $row->dias_para_vencer,
+                'semaforo' => $semaforo,
+                'estado_actual' => $estado_actual,
+                'saldo_pendiente' => (float)$saldoDeuda
+            ];
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Reporte de Ganancia por Actividad.
+     * Discrimina ingresos por Tai Chi, Chi Kung/Yoga, Libre.
+     */
+    public function gananciaActividad(Request $request)
+    {
+        $request->validate([
+            'mes' => 'required|integer|between:1,12',
+            'anio' => 'required|integer',
+        ]);
+
+        $mes = $request->mes;
+        $anio = $request->anio;
+        $lugar_id = $request->lugar_id;
+
+        $query = Pago::query()
+            ->join('Abono', 'Pago.abono_id', '=', 'Abono.id')
+            ->join('TipoAbono', 'Abono.tipo_abono_id', '=', 'TipoAbono.id')
+            ->leftJoin('Lugar', 'Pago.lugar_id', '=', 'Lugar.id')
+            ->select([
+                'TipoAbono.nombre as tipo_abono_nombre',
+                'TipoAbono.categoria as tipo_abono_categoria',
+                DB::raw('SUM(Pago.monto) as total_recaudado'),
+                DB::raw('COUNT(Pago.id) as cantidad_pagos')
+            ])
+            ->whereNull('Pago.deleted_at')
+            ->whereMonth('Pago.fecha', $mes)
+            ->whereYear('Pago.fecha', $anio);
+
+        if ($lugar_id) {
+            $query->where(function($q) use ($lugar_id) {
+                $q->where('Pago.lugar_id', $lugar_id)
+                  ->orWhere('Lugar.parent_id', $lugar_id);
+            });
+        }
+
+        $rows = $query->groupBy('TipoAbono.nombre', 'TipoAbono.categoria')->get();
+
+        // --- NUEVA LÓGICA DE COSTOS POR ACTIVIDAD ---
+        $firstDay = Carbon::create($anio, $mes, 1)->startOfDay();
+        $lastDay = Carbon::create($anio, $mes, 1)->endOfMonth()->endOfDay();
+
+        $clases = \App\Models\Clase::query()
+            ->join('Actividad', 'Clase.actividad_id', '=', 'Actividad.id')
+            ->join('Lugar', 'Clase.lugar_id', '=', 'Lugar.id')
+            ->select([
+                'Clase.tipo as clase_tipo',
+                'Actividad.nombre as actividad_nombre',
+                'Lugar.costo_tarifa',
+                'Lugar.tipo_tarifa',
+                DB::raw('SUM(TIME_TO_SEC(TIMEDIFF(Clase.hora_fin, Clase.hora))) / 3600 as horas')
+            ])
+            ->whereNull('Clase.deleted_at')
+            ->whereNotIn('Clase.estado', ['cancelada', 'suspendida', 'sin_actividad'])
+            ->whereBetween('Clase.fecha', [$firstDay, $lastDay])
+            ->when($lugar_id, function($q) use ($lugar_id) {
+                $q->where(function($sq) use ($lugar_id) {
+                    $sq->where('Clase.lugar_id', $lugar_id)
+                       ->orWhereHas('lugar', function($l) use ($lugar_id) {
+                           $l->where('parent_id', $lugar_id);
+                       });
+                });
+            })
+            ->groupBy('Clase.tipo', 'Actividad.nombre', 'Lugar.costo_tarifa', 'Lugar.tipo_tarifa')
+            ->get();
+
+        $resumen = [
+            'tai_chi' => ['nombre' => 'Tai Chi Chuan', 'total' => 0, 'pagos' => 0, 'horas_grupales' => 0, 'horas_flexibles' => 0, 'costo_salon_grupal' => 0, 'costo_salon_flexible' => 0, 'detalles' => []],
+            'chi_kung_yoga' => ['nombre' => 'Chi Kung y Yoga Suave', 'total' => 0, 'pagos' => 0, 'horas_grupales' => 0, 'horas_flexibles' => 0, 'costo_salon_grupal' => 0, 'costo_salon_flexible' => 0, 'detalles' => []],
+            'libre' => ['nombre' => 'Libre / Combinado', 'total' => 0, 'pagos' => 0, 'horas_grupales' => 0, 'horas_flexibles' => 0, 'costo_salon_grupal' => 0, 'costo_salon_flexible' => 0, 'detalles' => []],
+            'otros' => ['nombre' => 'Otros', 'total' => 0, 'pagos' => 0, 'horas_grupales' => 0, 'horas_flexibles' => 0, 'costo_salon_grupal' => 0, 'costo_salon_flexible' => 0, 'detalles' => []],
+        ];
+
+        foreach ($rows as $row) {
+            $nombre = strtolower($row->tipo_abono_nombre);
+            $categoria = $row->tipo_abono_categoria;
+            $monto = (float)$row->total_recaudado;
+            $pagos = (int)$row->cantidad_pagos;
+            $item = [
+                'nombre' => $row->tipo_abono_nombre,
+                'total' => $monto,
+                'pagos' => $pagos,
+                'categoria' => $categoria
+            ];
+
+            // Si NO es grupal, va directo a "otros"
+            if ($categoria !== 'grupal') {
+                $resumen['otros']['total'] += $monto;
+                $resumen['otros']['pagos'] += $pagos;
+                $resumen['otros']['detalles'][] = $item;
+            } elseif (str_contains($nombre, 'libre') || str_contains($nombre, 'combinado')) {
+                $resumen['libre']['total'] += $monto;
+                $resumen['libre']['pagos'] += $pagos;
+                $resumen['libre']['detalles'][] = $item;
+            } elseif (str_contains($nombre, 'tai chi') || str_contains($nombre, 'taichi')) {
+                $resumen['tai_chi']['total'] += $monto;
+                $resumen['tai_chi']['pagos'] += $pagos;
+                $resumen['tai_chi']['detalles'][] = $item;
+            } elseif (str_contains($nombre, 'chi kung') || str_contains($nombre, 'chikung') || str_contains($nombre, 'yoga') || str_contains($nombre, 'suave')) {
+                $resumen['chi_kung_yoga']['total'] += $monto;
+                $resumen['chi_kung_yoga']['pagos'] += $pagos;
+                $resumen['chi_kung_yoga']['detalles'][] = $item;
+            } else {
+                $resumen['otros']['total'] += $monto;
+                $resumen['otros']['pagos'] += $pagos;
+                $resumen['otros']['detalles'][] = $item;
+            }
+        }
+
+        foreach ($clases as $clase) {
+            $nombreAct = strtolower($clase->actividad_nombre);
+            $horas = (float)$clase->horas;
+            $costoUnitario = (float)$clase->costo_tarifa;
+            $costoTotal = $clase->tipo_tarifa === 'por_hora' ? ($horas * $costoUnitario) : $costoUnitario;
+
+            $actKey = 'otros';
+
+            if ($clase->clase_tipo === 'grupal') {
+                if (str_contains($nombreAct, 'tai chi') || str_contains($nombreAct, 'taichi')) {
+                    $actKey = 'tai_chi';
+                } elseif (str_contains($nombreAct, 'chi kung') || str_contains($nombreAct, 'chikung') || str_contains($nombreAct, 'yoga') || str_contains($nombreAct, 'suave')) {
+                    $actKey = 'chi_kung_yoga';
+                } elseif (str_contains($nombreAct, 'libre') || str_contains($nombreAct, 'combinado')) {
+                    $actKey = 'libre';
+                }
+                
+                $resumen[$actKey]['horas_grupales'] += $horas;
+                $resumen[$actKey]['costo_salon_grupal'] += $costoTotal;
+            } else {
+                $resumen['otros']['horas_flexibles'] += $horas;
+                $resumen['otros']['costo_salon_flexible'] += $costoTotal;
+            }
+        }
+
+        // --- REDISTRIBUCIÓN PROPORCIONAL DE INGRESOS "LIBRE" ---
+        if ($resumen['libre']['total'] > 0) {
+            $hTC = $resumen['tai_chi']['horas_grupales'];
+            $hCKY = $resumen['chi_kung_yoga']['horas_grupales'];
+            $totalH = $hTC + $hCKY;
+
+            if ($totalH > 0) {
+                $ratioTC = $hTC / $totalH;
+                $ratioCKY = $hCKY / $totalH;
+                $montoLibre = $resumen['libre']['total'];
+                $pagosLibre = $resumen['libre']['pagos'];
+
+                $resumen['tai_chi']['total'] += $montoLibre * $ratioTC;
+                $resumen['chi_kung_yoga']['total'] += $montoLibre * $ratioCKY;
+
+                if ($montoLibre * $ratioTC > 0) {
+                    $resumen['tai_chi']['detalles'][] = [
+                        'nombre' => 'Ingreso Proporcional de Abonos Libres',
+                        'total' => $montoLibre * $ratioTC,
+                        'pagos' => $pagosLibre,
+                        'categoria' => 'distribucion'
+                    ];
+                }
+                if ($montoLibre * $ratioCKY > 0) {
+                    $resumen['chi_kung_yoga']['detalles'][] = [
+                        'nombre' => 'Ingreso Proporcional de Abonos Libres',
+                        'total' => $montoLibre * $ratioCKY,
+                        'pagos' => $pagosLibre,
+                        'categoria' => 'distribucion'
+                    ];
+                }
+
+                $resumen['libre']['total'] = 0;
+                $resumen['libre']['pagos'] = 0;
+                $resumen['libre']['detalles'] = [];
+            }
+        }
+
+        return response()->json(['data' => $resumen]);
+    }
 }

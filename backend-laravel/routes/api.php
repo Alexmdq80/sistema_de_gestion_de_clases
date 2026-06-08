@@ -95,6 +95,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/balance-mensual', [InformeController::class, 'balanceMensual']);
         Route::get('/practicantes/cumpleanos', [InformeController::class, 'cumpleanos']);
         Route::get('/inscripciones-horarios', [InformeController::class, 'inscripcionesHorarios']);
+        Route::get('/abonos-estado', [InformeController::class, 'abonosEstado']);
+        Route::get('/ganancia-actividad', [InformeController::class, 'gananciaActividad']);
     });
     
     // Ejemplo de ruta para verificar el usuario actual
