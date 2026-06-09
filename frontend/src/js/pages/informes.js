@@ -1120,21 +1120,31 @@ export class InformesPage {
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
         const d = this.data;
 
-        const totalGeneral = Object.values(d).reduce((acc, cat) => acc + cat.total, 0);
-        const totalPagos = Object.values(d).reduce((acc, cat) => acc + cat.pagos, 0);
+        const totalGeneralIngresos = Object.values(d).reduce((acc, cat) => acc + cat.total, 0);
+        const totalPagosCount = Object.values(d).reduce((acc, cat) => acc + cat.pagos, 0);
+        const totalHorasGrupales = Object.values(d).reduce((acc, cat) => acc + cat.horas_grupales, 0);
+        const totalHorasFlexibles = Object.values(d).reduce((acc, cat) => acc + cat.horas_flexibles, 0);
+        const totalHorasDictadas = totalHorasGrupales + totalHorasFlexibles;
+        const totalCostoSalon = Object.values(d).reduce((acc, cat) => acc + cat.costo_salon_grupal + cat.costo_salon_flexible, 0);
+        const totalMargenNeto = totalGeneralIngresos - totalCostoSalon;
+        const totalPctMargen = totalGeneralIngresos > 0 ? (totalMargenNeto / totalGeneralIngresos) * 100 : 0;
 
         content.innerHTML = `
             <div class="report-paper p-4 bg-white border">
                 ${this.renderReportHeader('Ganancia Mensual por Actividad', `${sedeNombre} - Periodo: ${monthNames[this.selectedMonth - 1]} ${this.selectedYear}`)}
                 
-                <div class="grid grid-2 gap-4 mb-5 no-print">
+                <div class="grid grid-3 gap-4 mb-5 no-print">
                     <div class="card p-4 bg-light border-primary shadow-sm text-center">
-                        <h4 class="text-muted text-uppercase small font-weight-bold">Recaudación Total</h4>
-                        <h2 class="text-primary" style="font-size: 2.5rem; font-weight: 800;">$${totalGeneral.toFixed(2)}</h2>
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Ingresos Totales</h4>
+                        <h2 class="text-primary" style="font-size: 2.2rem; font-weight: 800;">$${totalGeneralIngresos.toFixed(2)}</h2>
+                    </div>
+                    <div class="card p-4 bg-light border-success shadow-sm text-center">
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Margen Neto General</h4>
+                        <h2 class="text-success" style="font-size: 2.2rem; font-weight: 800;">$${totalMargenNeto.toFixed(2)}</h2>
                     </div>
                     <div class="card p-4 bg-light border-secondary shadow-sm text-center">
-                        <h4 class="text-muted text-uppercase small font-weight-bold">Total de Abonos Vendidos</h4>
-                        <h2 class="text-secondary" style="font-size: 2.5rem; font-weight: 800;">${totalPagos}</h2>
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Horas Totales</h4>
+                        <h2 class="text-secondary" style="font-size: 2.2rem; font-weight: 800;">${totalHorasDictadas.toFixed(1)}h</h2>
                     </div>
                 </div>
 
@@ -1217,9 +1227,32 @@ export class InformesPage {
                     }).join('')}
                 </div>
 
-                <div class="mt-5 p-4 border-dark rounded bg-dark text-white text-right">
-                    <h4 class="mb-1 text-uppercase small" style="opacity: 0.8;">Total General Recaudado</h4>
-                    <h2 class="mb-0" style="font-size: 2.5rem; font-weight: 800;">$${totalGeneral.toFixed(2)}</h2>
+                <div class="mt-5 p-4 border rounded bg-dark text-white shadow-lg" style="page-break-inside: avoid;">
+                    <div class="flex justify-between align-items-center mb-4 border-bottom border-secondary pb-3">
+                        <h2 class="mb-0 text-uppercase" style="letter-spacing: 2px; font-weight: 800;">Balance General Final</h2>
+                        <div class="text-right">
+                            <span class="badge badge-success p-2 px-3" style="font-size: 1rem;">${totalPctMargen.toFixed(1)}% RENTABILIDAD</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-4 gap-4 text-center">
+                        <div>
+                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Total Ingresos</small>
+                            <h3 class="mb-0" style="font-weight: 700;">$${totalGeneralIngresos.toFixed(2)}</h3>
+                        </div>
+                        <div>
+                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Total Costos Salón</small>
+                            <h3 class="mb-0 text-warning" style="font-weight: 700;">$${totalCostoSalon.toFixed(2)}</h3>
+                        </div>
+                        <div>
+                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Horas Dictadas</small>
+                            <h3 class="mb-0" style="font-weight: 700;">${totalHorasDictadas.toFixed(1)}h</h3>
+                        </div>
+                        <div class="bg-success rounded p-2 text-white">
+                            <small class="d-block text-uppercase mb-1" style="opacity: 0.9;">MARGEN NETO</small>
+                            <h2 class="mb-0" style="font-weight: 900; font-size: 2.2rem;">$${totalMargenNeto.toFixed(2)}</h2>
+                        </div>
+                    </div>
                 </div>
 
                 ${this.renderReportFooter()}
