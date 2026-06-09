@@ -15,77 +15,41 @@ use Carbon\Carbon;
 class DeudaController extends Controller
 {
     /**
-     * Lista todas las deudas con filtros opcionales, incluyendo saldos pendientes de Abonos.
+     * Lista todas las deudas con filtros opcionales (solo tabla Deuda).
      */
     public function index(Request $request)
     {
         $practicanteId = $request->get('practicante_id');
         $estadoFilter = $request->get('estado');
 
-        // Construcción de la consulta RAW para asegurar paridad total y evitar problemas de bindings en UNION
         $sql = "
-            SELECT * FROM (
-                -- Manual debts from Deuda table
-                SELECT 
-                    d.id, d.practicante_id, 
-                    (d.monto - IFNULL((SELECT SUM(monto) FROM Pago WHERE deuda_id = d.id AND deleted_at IS NULL), 0)) as monto,
-                    d.concepto, d.fecha, d.estado,
-                    NULL as original_estado,
-                    d.created_at,
-                    p.nombre_completo as practicante_nombre,
-                    'manual' as tipo,
-                    d.monto as monto_original
-                FROM Deuda d
-                JOIN Practicante p ON d.practicante_id = p.id
-                WHERE d.deleted_at IS NULL
-
-                UNION ALL
-
-                -- Outstanding balances from Abono table
-                SELECT 
-                    a.id, a.practicante_id, 
-                    (
-                        IFNULL(a.monto_pactado, 0) - 
-                        IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0) -
-                        IFNULL((
-                            SELECT SUM(m.monto) 
-                            FROM MovimientoCaja m 
-                            JOIN Pago p2 ON m.usado_en_pago_id = p2.id 
-                            WHERE p2.abono_id = a.id AND m.deleted_at IS NULL AND p2.deleted_at IS NULL
-                        ), 0)
-                    ) as monto,
-                    CONCAT('Saldo Abono: ', ta.nombre, IF(a.mes_abono IS NOT NULL, CONCAT(' (', a.mes_abono, ')'), '')) as concepto,
-                    a.fecha_inicio as fecha,
-                    CASE WHEN a.estado = 'cancelado' THEN 'cancelada' ELSE 'pendiente' END as estado,
-                    a.estado as original_estado,
-                    a.created_at,
-                    pr.nombre_completo as practicante_nombre,
-                    'abono' as tipo,
-                    IFNULL(a.monto_pactado, 0) as monto_original
-                FROM Abono a
-                JOIN Practicante pr ON a.practicante_id = pr.id
-                JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
-                WHERE a.deleted_at IS NULL
-                HAVING monto > 0 OR (original_estado = 'cancelado' AND monto >= 0)
-            ) as todas_deudas
-            WHERE 1=1
+            SELECT 
+                d.id, d.practicante_id, 
+                (d.monto - IFNULL((SELECT SUM(monto) FROM Pago WHERE deuda_id = d.id AND deleted_at IS NULL), 0)) as monto,
+                d.concepto, d.fecha, d.estado,
+                NULL as original_estado,
+                d.created_at,
+                p.nombre_completo as practicante_nombre,
+                'manual' as tipo,
+                d.monto as monto_original
+            FROM Deuda d
+            JOIN Practicante p ON d.practicante_id = p.id
+            WHERE d.deleted_at IS NULL
         ";
 
         $bindings = [];
 
         if ($practicanteId) {
-            // Note: If using raw SQL with UNION, we must be careful with bindings if the parameter is used in multiple subqueries
-            // But here the outer WHERE will handle it.
-            $sql .= " AND practicante_id = ?";
+            $sql .= " AND d.practicante_id = ?";
             $bindings[] = $practicanteId;
         }
 
         if ($estadoFilter) {
-            $sql .= " AND estado = ?";
+            $sql .= " AND d.estado = ?";
             $bindings[] = $estadoFilter;
         }
 
-        $sql .= " ORDER BY fecha DESC, created_at DESC";
+        $sql .= " ORDER BY d.fecha DESC, d.created_at DESC";
 
         $data = DB::select($sql, $bindings);
 

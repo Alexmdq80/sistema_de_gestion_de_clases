@@ -14,72 +14,38 @@ router.use(authenticateToken);
 
 /**
  * GET /api/deudas
- * Lista todas las deudas con filtros opcionales, incluyendo saldos pendientes de Abonos.
+ * Lista todas las deudas registradas en la tabla Deuda.
  */
 router.get('/', asyncHandler(async (req, res) => {
     const { practicante_id, estado } = req.query;
     
-    // We want to join with Practicante to get the name
-    // We use a UNION to include both explicit manual debts and Abono balances
     let sql = `
-        SELECT * FROM (
-            -- Manual debts from Deuda table
-            SELECT 
-                d.id, d.practicante_id, 
-                (d.monto - IFNULL((SELECT SUM(monto) FROM Pago WHERE deuda_id = d.id AND deleted_at IS NULL), 0)) as monto,
-                d.concepto, d.fecha, d.estado,
-                NULL as original_estado,
-                d.created_at,
-                p.nombre_completo as practicante_nombre,
-                'manual' as tipo,
-                d.monto as monto_original
-            FROM Deuda d
-            JOIN Practicante p ON d.practicante_id = p.id
-            WHERE d.deleted_at IS NULL
-
-            UNION ALL
-
-            -- Outstanding balances from Abono table
-            SELECT 
-                a.id, a.practicante_id, 
-                (
-                    IFNULL(a.monto_pactado, 0) - 
-                    IFNULL((SELECT SUM(monto) FROM Pago WHERE abono_id = a.id AND deleted_at IS NULL), 0) -
-                    IFNULL((
-                        SELECT SUM(m.monto) 
-                        FROM MovimientoCaja m 
-                        JOIN Pago p2 ON m.usado_en_pago_id = p2.id 
-                        WHERE p2.abono_id = a.id AND m.deleted_at IS NULL AND p2.deleted_at IS NULL
-                    ), 0)
-                ) as monto,
-                CONCAT('Saldo Abono: ', ta.nombre, IF(a.mes_abono IS NOT NULL, CONCAT(' (', a.mes_abono, ')'), '')) as concepto,
-                a.fecha_inicio as fecha,
-                CASE WHEN a.estado = 'cancelado' THEN 'cancelada' ELSE 'pendiente' END as estado,
-                a.estado as original_estado,
-                a.created_at,                pr.nombre_completo as practicante_nombre,
-                'abono' as tipo,
-                IFNULL(a.monto_pactado, 0) as monto_original
-            FROM Abono a
-            JOIN Practicante pr ON a.practicante_id = pr.id
-            JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
-            WHERE a.deleted_at IS NULL
-            HAVING monto > 0 OR (original_estado = 'cancelado' AND monto >= 0)
-        ) as todas_deudas
-        WHERE 1=1
+        SELECT 
+            d.id, d.practicante_id, 
+            (d.monto - IFNULL((SELECT SUM(monto) FROM Pago WHERE deuda_id = d.id AND deleted_at IS NULL), 0)) as monto,
+            d.concepto, d.fecha, d.estado,
+            NULL as original_estado,
+            d.created_at,
+            p.nombre_completo as practicante_nombre,
+            'manual' as tipo,
+            d.monto as monto_original
+        FROM Deuda d
+        JOIN Practicante p ON d.practicante_id = p.id
+        WHERE d.deleted_at IS NULL
     `;
     const params = [];
 
     if (practicante_id) {
-        sql += ' AND practicante_id = ?';
+        sql += ' AND d.practicante_id = ?';
         params.push(practicante_id);
     }
 
     if (estado) {
-        sql += ' AND estado = ?';
+        sql += ' AND d.estado = ?';
         params.push(estado);
     }
 
-    sql += ' ORDER BY fecha DESC, created_at DESC';
+    sql += ' ORDER BY d.fecha DESC, d.created_at DESC';
 
     const [rows] = await pool.execute(sql, params);
     res.json({ data: rows });
@@ -156,6 +122,7 @@ router.put('/:id/pagar', asyncHandler(async (req, res) => {
     const newPago = await Pago.create({
         practicante_id: deuda.practicante_id,
         deuda_id: id,
+        abono_id: deuda.abono_id || null, // Link to abono if exists
         monto: monto_pago || deuda.monto,
         mes_abono: currentMesAbono,
         lugar_id: lugarId,

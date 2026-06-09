@@ -12,6 +12,7 @@ export class Deuda {
         this.fecha = data.fecha;
         this.estado = data.estado || 'pendiente';
         this.clase_id = data.clase_id || null;
+        this.abono_id = data.abono_id || null;
         this.usuario_id = data.usuario_id || null;
         this.created_at = data.created_at || null;
         this.updated_at = data.updated_at || null;
@@ -20,8 +21,8 @@ export class Deuda {
 
     static async create(data, connection = null, userId = null) {
         const sql = `
-            INSERT INTO Deuda (practicante_id, monto, concepto, fecha, estado, clase_id, usuario_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO Deuda (practicante_id, monto, concepto, fecha, estado, clase_id, abono_id, usuario_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const executor = connection || pool;
         const effectiveUserId = userId || data.usuario_id || null;
@@ -33,6 +34,7 @@ export class Deuda {
             data.fecha,
             data.estado || 'pendiente',
             data.clase_id || null,
+            data.abono_id || null,
             effectiveUserId
         ]);
         
@@ -113,6 +115,7 @@ export class Deuda {
             fecha: this.fecha,
             estado: this.estado,
             clase_id: this.clase_id,
+            abono_id: this.abono_id,
             usuario_id: this.usuario_id,
             created_at: this.created_at
         };

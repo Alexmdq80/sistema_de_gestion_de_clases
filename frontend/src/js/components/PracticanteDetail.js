@@ -423,6 +423,17 @@ export class PracticanteDetail {
               <label for="partial-notas-textarea">Notas:</label>
               <textarea id="partial-notas-textarea" name="notas" rows="3"></textarea>
             </div>
+
+            <div id="partial-debt-suggestion-container" class="form-group" style="display: none; background: #fff3cd; padding: 10px; border: 1px solid #ffeeba; border-radius: 4px; margin-bottom: 1rem;">
+                <p id="partial-debt-suggestion-text" style="margin-bottom: 0.5rem; color: #856404; font-weight: bold;"></p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="partial-finalizar-deuda-checkbox">
+                    <label class="form-check-label" for="partial-finalizar-deuda-checkbox" style="font-weight: 500;">
+                        Finalizar deuda (el saldo restante NO se cobrará)
+                    </label>
+                </div>
+            </div>
+
             <button type="submit" id="partial-payment-submit-btn" class="btn btn-primary">Confirmar Abono</button>
             <p class="error-message" id="partial-payment-error-message" style="display: none; color: red;"></p>
           </form>
@@ -989,6 +1000,7 @@ export class PracticanteDetail {
             cantidad: parseInt(cantidad, 10),
             monto: parseFloat(monto),
             monto_pactado: pactAmount,
+            generar_deuda: generarDeuda,
             mes_abono: mes_abono,
             fecha_vencimiento,
             fecha_pago,
@@ -1072,6 +1084,7 @@ export class PracticanteDetail {
         const abono_id = abonoIdInput.value;
         const metodo_pago = metodoPagoSelect.value;
         const notas = notasTextarea.value;
+        const finalizar_deuda = partialPaymentForm.querySelector('#partial-finalizar-deuda-checkbox').checked;
 
         // Construct the payload for the POST /api/pagos/partial endpoint
         const payload = {
@@ -1080,7 +1093,8 @@ export class PracticanteDetail {
             monto: monto,
             fecha_pago: fecha_pago,
             metodo_pago: metodo_pago,
-            notas: notas
+            notas: notas,
+            finalizar_deuda: finalizar_deuda
         };
 
         // 2.4 Make the API call using the client helper
@@ -1282,6 +1296,28 @@ export class PracticanteDetail {
     
     // Set suggested amount to the pending balance
     form.querySelector('#partial-monto-input').value = saldo.toFixed(2);
+
+    // Logic to show/hide "Finalizar deuda" if they pay less than the pending balance
+    const montoInput = form.querySelector('#partial-monto-input');
+    const suggestionContainer = form.querySelector('#partial-debt-suggestion-container');
+    const suggestionText = form.querySelector('#partial-debt-suggestion-text');
+    const checkbox = form.querySelector('#partial-finalizar-deuda-checkbox');
+
+    const updateSuggestion = () => {
+        const currentMonto = parseFloat(montoInput.value) || 0;
+        const diff = saldo - currentMonto;
+        if (diff > 0.01) {
+            suggestionContainer.style.display = 'block';
+            suggestionText.textContent = `Saldo pendiente detectado: $${diff.toFixed(2)}`;
+            // We don't force it to be checked, let the user decide
+        } else {
+            suggestionContainer.style.display = 'none';
+            checkbox.checked = false;
+        }
+    };
+
+    montoInput.addEventListener('input', updateSuggestion);
+    updateSuggestion();
 
     // Show the modal
     modal.style.display = 'block';

@@ -56,6 +56,15 @@ export class DeudasPage {
                                 <small class="text-info">Importe que el alumno abona en este momento.</small>
                             </div>
 
+                            <div id="finalizar-deuda-container" class="form-group mb-3 p-2 rounded" style="background: #fff3cd; display: none;">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="checkbox-finalizar-deuda">
+                                    <label class="form-check-label font-weight-bold" for="checkbox-finalizar-deuda">
+                                        Finalizar deuda (el saldo restante NO se cobrará)
+                                    </label>
+                                </div>
+                            </div>
+
                             <div class="form-actions mt-4">
                                 <button type="submit" class="btn btn-success btn-lg btn-block">Confirmar Pago</button>
                                 <button type="button" class="btn btn-secondary btn-block cancel-pago-modal">Cancelar</button>
@@ -81,6 +90,35 @@ export class DeudasPage {
 
         const modal = this.container.querySelector('#pago-deuda-modal');
         const form = this.container.querySelector('#pago-deuda-form');
+        const inputPactado = this.container.querySelector('#input-monto-pactado');
+        const inputPagado = this.container.querySelector('#input-monto-pagado');
+        const finalizarContainer = this.container.querySelector('#finalizar-deuda-container');
+        const checkboxFinalizar = this.container.querySelector('#checkbox-finalizar-deuda');
+
+        const updateFinalizarVisibility = () => {
+            const pactado = parseFloat(inputPactado.value) || 0;
+            const pagado = parseFloat(inputPagado.value) || 0;
+            // We consider the total paid so far for Abonos
+            const id = parseInt(this.container.querySelector('#pago-deuda-id').value, 10);
+            const tipo = this.container.querySelector('#pago-deuda-tipo').value;
+            const deuda = this.deudas.find(d => d.id === id && d.tipo === tipo);
+            
+            if (!deuda) return;
+
+            // total_pagado_previo = pactado_original - saldo_pendiente_actual
+            const totalPagadoPrevio = parseFloat(deuda.monto_original) - parseFloat(deuda.monto);
+            const totalFinal = totalPagadoPrevio + pagado;
+
+            if (totalFinal < parseFloat(deuda.monto_original) - 0.01) {
+                finalizarContainer.style.display = 'block';
+            } else {
+                finalizarContainer.style.display = 'none';
+                checkboxFinalizar.checked = false;
+            }
+        };
+
+        inputPagado.addEventListener('input', updateFinalizarVisibility);
+        inputPactado.addEventListener('input', updateFinalizarVisibility);
 
         this.container.querySelector('.close-pago-modal').onclick = () => modal.style.display = 'none';
         this.container.querySelector('.cancel-pago-modal').onclick = () => modal.style.display = 'none';
@@ -89,8 +127,14 @@ export class DeudasPage {
             e.preventDefault();
             const id = parseInt(this.container.querySelector('#pago-deuda-id').value, 10);
             const tipo = this.container.querySelector('#pago-deuda-tipo').value;
-            const monto_esperado = parseFloat(this.container.querySelector('#input-monto-pactado').value);
-            const monto_pago = parseFloat(this.container.querySelector('#input-monto-pagado').value);
+            let monto_esperado = parseFloat(inputPactado.value);
+            const monto_pago = parseFloat(inputPagado.value);
+
+            if (checkboxFinalizar.checked) {
+                const deuda = this.deudas.find(d => d.id === id && d.tipo === tipo);
+                const totalPagadoPrevio = parseFloat(deuda.monto_original) - parseFloat(deuda.monto);
+                monto_esperado = totalPagadoPrevio + monto_pago;
+            }
 
             try {
                 await apiClient.put(`/deudas/${id}/pagar?tipo=${tipo}`, {
@@ -202,12 +246,17 @@ export class DeudasPage {
         
         const inputPactado = this.container.querySelector('#input-monto-pactado');
         const inputPagado = this.container.querySelector('#input-monto-pagado');
+        const checkboxFinalizar = this.container.querySelector('#checkbox-finalizar-deuda');
         
         inputPactado.value = parseFloat(deuda.monto_original).toFixed(2);
         inputPagado.value = parseFloat(deuda.monto).toFixed(2);
+        checkboxFinalizar.checked = false;
 
         modal.style.display = 'block';
         inputPagado.focus();
+        
+        // Trigger visibility update
+        inputPagado.dispatchEvent(new Event('input'));
     }
 
     async handleCancel(id, tipo = 'manual') {

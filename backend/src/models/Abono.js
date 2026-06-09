@@ -159,7 +159,7 @@ export class Abono {
      * @param {Object} [connection] - Database connection
      * @returns {Promise<Object>}
      */
-    static async getBalance(id) {
+    static async getBalance(id, connection = null) {
         const sql = `
             SELECT 
                 a.monto_pactado,
@@ -186,7 +186,8 @@ export class Abono {
             WHERE a.id = ?
             GROUP BY a.id, a.monto_pactado, a.estado
         `;
-        const [rows] = await pool.execute(sql, [id]);
+        const executor = connection || pool;
+        const [rows] = await executor.execute(sql, [id]);
         return rows.length ? rows[0] : { monto_pactado: 0, total_pagado: 0, total_notas_credito: 0, saldo_pendiente: 0, estado: 'activo' };
     }
 

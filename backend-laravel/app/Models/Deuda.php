@@ -16,6 +16,7 @@ class Deuda extends Model
         'fecha',
         'estado',
         'clase_id',
+        'abono_id',
         'pago_id',
         'usuario_id',
     ];
@@ -35,6 +36,11 @@ class Deuda extends Model
     public function clase(): BelongsTo
     {
         return $this->belongsTo(Clase::class, 'clase_id');
+    }
+
+    public function abono(): BelongsTo
+    {
+        return $this->belongsTo(Abono::class, 'abono_id');
     }
 
     public function usuario(): BelongsTo

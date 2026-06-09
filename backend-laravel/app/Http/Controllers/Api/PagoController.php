@@ -217,6 +217,7 @@ class PagoController extends Controller
             'tipo_abono_id' => 'required|exists:TipoAbono,id',
             'monto' => 'required|numeric|min:0',
             'monto_pactado' => 'nullable|numeric|min:0',
+            'generar_deuda' => 'nullable|boolean',
             'metodo_pago' => 'required|string',
             'cantidad' => 'integer|min:1',
             'fecha_pago' => 'nullable|date',
@@ -352,11 +353,37 @@ class PagoController extends Controller
                 }
             }
 
+            // 6. Explicit Debt Creation: If there's a pending balance and requested, create a physical record.
+            if ($request->generar_deuda) {
+                $totalPagado = Pago::where('abono_id', $abono->id)->whereNull('deleted_at')->sum('monto');
+                $totalNC = DB::table('MovimientoCaja as m')
+                    ->join('Pago as p', 'm.usado_en_pago_id', '=', 'p.id')
+                    ->where('p.abono_id', $abono->id)
+                    ->whereNull('m.deleted_at')
+                    ->whereNull('p.deleted_at')
+                    ->sum('m.monto');
+
+                $saldoPendiente = (float)$abono->monto_pactado - (float)$totalPagado - (float)$totalNC;
+
+                if ($saldoPendiente > 0.01) {
+                    \App\Models\Deuda::create([
+                        'practicante_id' => $id,
+                        'monto' => $saldoPendiente,
+                        'concepto' => "Saldo pendiente: {$tipoAbono->nombre}" . ($abono->mes_abono ? " ({$abono->mes_abono})" : ""),
+                        'fecha' => $fechaPago,
+                        'estado' => 'pendiente',
+                        'abono_id' => $abono->id,
+                        'usuario_id' => $userId
+                    ]);
+                }
+            }
+
             return response()->json([
                 'message' => 'Pago registrado correctamente',
                 'data' => $pago
             ], 201);
         });
+    }
     }
 
     /**
@@ -391,12 +418,14 @@ class PagoController extends Controller
             'monto' => 'required|numeric|min:0',
             'metodo_pago' => 'required|string',
             'fecha_pago' => 'nullable|date',
-            'notas' => 'nullable|string'
+            'notas' => 'nullable|string',
+            'finalizar_deuda' => 'nullable|boolean'
         ]);
 
         return DB::transaction(function () use ($request) {
             $abono = \App\Models\Abono::findOrFail($request->abono_id);
             $fecha = $request->fecha_pago ?: now()->toDateString();
+            $userId = auth()->id();
             
             // Determinar mes de abono basado en la fecha
             $meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -411,8 +440,32 @@ class PagoController extends Controller
                 'metodo_pago' => $request->metodo_pago,
                 'fecha' => $fecha,
                 'mes_abono' => $mesAbono,
-                'notas' => $request->notas
+                'notas' => "[PAGO ADICIONAL] " . ($request->notas ?? '')
             ]);
+
+            if ($request->finalizar_deuda === true) {
+                $totalPagado = Pago::where('abono_id', $abono->id)->whereNull('deleted_at')->sum('monto');
+                
+                $totalNC = DB::table('MovimientoCaja as m')
+                    ->join('Pago as p', 'm.usado_en_pago_id', '=', 'p.id')
+                    ->where('p.abono_id', $abono->id)
+                    ->whereNull('m.deleted_at')
+                    ->whereNull('p.deleted_at')
+                    ->sum('m.monto');
+
+                $newMontoPactado = (float)$totalPagado + (float)$totalNC;
+
+                $oldAbono = $abono->toArray();
+                $abono->update(['monto_pactado' => $newMontoPactado]);
+                
+                HistorialAbono::create([
+                    'abono_id' => $abono->id,
+                    'accion' => 'UPDATE',
+                    'datos_anteriores' => $oldAbono,
+                    'datos_nuevos' => $abono->fresh()->toArray(),
+                    'usuario_id' => $userId
+                ]);
+            }
 
             return response()->json(['data' => $pago], 201);
         });

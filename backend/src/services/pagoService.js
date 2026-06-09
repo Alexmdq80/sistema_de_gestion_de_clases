@@ -2,6 +2,7 @@ import Pago from '../models/Pago.js';
 import Practicante from '../models/Practicante.js';
 import TipoAbono from '../models/TipoAbono.js';
 import Abono from '../models/Abono.js';
+import Deuda from '../models/Deuda.js';
 import Socio from '../models/Socio.js';
 import PagoSocio from '../models/PagoSocio.js';
 import { AppError } from '../utils/errors.js';
@@ -218,6 +219,23 @@ export class PagoService {
                 }
             }
 
+            // 6. Explicit Debt Creation: If there's a pending balance and the user requested debt generation,
+            // we create a physical record in the Deuda table.
+            if (extraData.generar_deuda) {
+                const balance = await Abono.getBalance(newAbono.id, connection);
+                if (balance.saldo_pendiente > 0.01) {
+                    await Deuda.create({
+                        practicante_id: practicanteId,
+                        monto: balance.saldo_pendiente,
+                        concepto: `Saldo pendiente: ${tipoAbono.nombre}${abonoData.mes_abono ? ` (${abonoData.mes_abono})` : ''}`,
+                        fecha: fechaPagoStr,
+                        estado: 'pendiente',
+                        abono_id: newAbono.id,
+                        usuario_id: userId
+                    }, connection, userId);
+                }
+            }
+
             await connection.commit();
             return newPago;
         } catch (error) {
@@ -237,23 +255,63 @@ export class PagoService {
      * @param {string} notas 
      * @param {number} userId 
      * @param {string} [mes_abono=null] - Optional override for the accrual month
+     * @param {boolean} [finalizar_deuda=false] - If true, adjusts monto_pactado to match total payments
      */
-    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId, mes_abono = null) {
-        const abono = await Abono.findById(abonoId);
-        if (!abono) throw new AppError('Abono no encontrado', 404);
+    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId, mes_abono = null, finalizar_deuda = false) {
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
 
-        const pagoData = {
-            practicante_id: abono.practicante_id,
-            abono_id: abono.id,
-            mes_abono: mes_abono || abono.mes_abono,
-            lugar_id: abono.lugar_id,
-            fecha: fecha || new Date().toISOString().split('T')[0],
-            monto: monto,
-            metodo_pago: metodoPago,
-            notas: `[PAGO ADICIONAL] ${notas || ''}`.trim()
-        };
+        try {
+            const abono = await Abono.findById(abonoId, connection);
+            if (!abono) throw new AppError('Abono no encontrado', 404);
 
-        return await Pago.create(pagoData, null, userId);
+            const todayStr = fecha || new Date().toISOString().split('T')[0];
+
+            const pagoData = {
+                practicante_id: abono.practicante_id,
+                abono_id: abono.id,
+                mes_abono: mes_abono || abono.mes_abono,
+                lugar_id: abono.lugar_id,
+                fecha: todayStr,
+                monto: monto,
+                metodo_pago: metodoPago,
+                notas: `[PAGO ADICIONAL] ${notas || ''}`.trim()
+            };
+
+            const newPago = await Pago.create(pagoData, connection, userId);
+
+            if (finalizar_deuda) {
+                // Adjust monto_pactado to be the sum of all payments (including the new one)
+                const [rows] = await connection.execute(
+                    'SELECT SUM(monto) as total_pagado FROM Pago WHERE abono_id = ? AND deleted_at IS NULL',
+                    [abonoId]
+                );
+                const totalPagado = rows[0].total_pagado || 0;
+
+                // Include credit notes in the total to correctly adjust pactado
+                const [ncRows] = await connection.execute(
+                    'SELECT IFNULL(SUM(m.monto), 0) as total_nc FROM MovimientoCaja m JOIN Pago p ON m.usado_en_pago_id = p.id WHERE p.abono_id = ? AND m.deleted_at IS NULL AND p.deleted_at IS NULL',
+                    [abonoId]
+                );
+                const totalNC = ncRows[0].total_nc || 0;
+
+                const newMontoPactado = parseFloat(totalPagado) + parseFloat(totalNC);
+
+                const oldAbono = abono.toJSON();
+                await connection.execute('UPDATE Abono SET monto_pactado = ? WHERE id = ?', [newMontoPactado, abonoId]);
+                
+                const updatedAbono = await Abono.findById(abonoId, connection);
+                await Abono.recordHistory(abonoId, 'UPDATE', oldAbono, updatedAbono.toJSON(), userId, connection);
+            }
+
+            await connection.commit();
+            return newPago;
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
     }
 
     /**
