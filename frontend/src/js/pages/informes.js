@@ -345,7 +345,8 @@ export class InformesPage {
         this.container.querySelectorAll('.row-checkbox-cuota').forEach(cb => {
             if (cb.checked) {
                 const index = cb.closest('tr').dataset.index;
-                subtotalCuotas += parseFloat(this.data.cuotas[index].monto);
+                const item = this.data.cuotas[index];
+                subtotalCuotas += item.es_nota_credito ? 0 : parseFloat(item.monto);
             }
         });
 
@@ -353,7 +354,8 @@ export class InformesPage {
         this.container.querySelectorAll('.row-checkbox-alquiler').forEach(cb => {
             if (cb.checked) {
                 const index = cb.closest('tr').dataset.index;
-                subtotalAlquiler += parseFloat(this.data.alquileres[index].monto || 0);
+                const item = this.data.alquileres[index];
+                subtotalAlquiler += item.es_nota_credito ? 0 : parseFloat(item.monto || 0);
             }
         });
 
@@ -384,7 +386,8 @@ export class InformesPage {
             if (cb.checked) {
                 const tr = cb.closest('tr');
                 const index = tr.dataset.index;
-                total += parseFloat(this.data[index].monto);
+                const item = this.data[index];
+                total += item.es_nota_credito ? 0 : parseFloat(item.monto);
             }
         });
         
@@ -436,7 +439,8 @@ export class InformesPage {
             if (cb.checked) {
                 const tr = cb.closest('tr');
                 const index = tr.dataset.index;
-                total += parseFloat(this.data[index].monto_pagado || 0);
+                const item = this.data[index];
+                total += item.es_nota_credito ? 0 : parseFloat(item.monto_pagado || 0);
             }
         });
         
@@ -589,8 +593,8 @@ export class InformesPage {
         const sedeNombre = this.lugares.find(l => l.id == this.selectedLugarId)?.nombre;
         
         const { cuotas, alquileres } = this.data;
-        const totalCuotas = cuotas.reduce((acc, item) => acc + parseFloat(item.monto), 0);
-        const totalAlquiler = alquileres.reduce((acc, item) => acc + parseFloat(item.monto), 0);
+        const totalCuotas = cuotas.reduce((acc, item) => acc + (item.es_nota_credito ? 0 : parseFloat(item.monto)), 0);
+        const totalAlquiler = alquileres.reduce((acc, item) => acc + (item.es_nota_credito ? 0 : parseFloat(item.monto)), 0);
         const totalALiquidar = totalCuotas + totalAlquiler;
 
         content.innerHTML = `
@@ -619,9 +623,15 @@ export class InformesPage {
                             ${cuotas.map((c, index) => `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-cuota" checked></td>
-                                    <td>${c.nombre_completo}</td>
+                                    <td>
+                                        ${c.nombre_completo}
+                                        ${c.es_nota_credito ? '<span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>' : ''}
+                                    </td>
                                     <td>Cuota Social ${c.mes_abono}</td>
-                                    <td class="text-right">$${parseFloat(c.monto).toFixed(2)}</td>
+                                    <td class="text-right">
+                                        $${parseFloat(c.monto).toFixed(2)}
+                                        ${c.es_nota_credito ? ` <br><small class="text-info">(-$${parseFloat(c.monto).toFixed(2)})</small>` : ''}
+                                    </td>
                                 </tr>
                             `).join('')}
                             ${cuotas.length === 0 ? '<tr><td colspan="4" class="text-center text-muted">No se registraron cuotas</td></tr>' : ''}
@@ -667,12 +677,19 @@ export class InformesPage {
                                     const detalle = (a.estado === 'cancelada' || a.estado === 'sin_actividad') ? (a.motivo_cancelacion || '') : (a.motivo_cancelacion || a.observaciones || '');
                                     actividadDetalle += ` <br><small class="text-danger">(${label}${detalle ? ': ' + detalle : ''})</small>`;
                                 }
+
+                                if (a.es_nota_credito) {
+                                    actividadDetalle += ` <span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>`;
+                                }
                                 return `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-alquiler" checked></td>
                                     <td>${capitalizedDay} ${dateStr} <small class="text-muted">(${a.hora.substring(0, 5)} hs)</small></td>
                                     <td>${actividadDetalle}</td>
-                                    <td class="text-right">$${montoNum.toFixed(2)}</td>
+                                    <td class="text-right">
+                                        $${montoNum.toFixed(2)}
+                                        ${a.es_nota_credito ? ` <br><small class="text-info">(-$${montoNum.toFixed(2)})</small>` : ''}
+                                    </td>
                                 </tr>
                             `}).join('')}
                             ${alquileres.length === 0 ? '<tr><td colspan="4" class="text-center text-muted">No se registraron alquileres</td></tr>' : ''}
@@ -944,7 +961,7 @@ export class InformesPage {
         const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
         const isSedeFiltered = this.selectedLugarId !== '';
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
-        const total = this.data.reduce((acc, item) => acc + parseFloat(item.monto), 0);
+        const total = this.data.reduce((acc, item) => acc + (item.es_nota_credito ? 0 : parseFloat(item.monto)), 0);
 
         content.innerHTML = `
             <div class="report-paper p-4 bg-white border">
@@ -966,10 +983,16 @@ export class InformesPage {
                             <tr data-index="${index}">
                                 <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
-                                <td>${item.practicante_nombre}</td>
+                                <td>
+                                    ${item.practicante_nombre}
+                                    ${item.es_nota_credito ? '<span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>' : ''}
+                                </td>
                                 <td>${item.mes_abono}</td>
                                 <td>${formatDateDashes(item.fecha_pago)}</td>
-                                <td class="text-right">$${parseFloat(item.monto).toFixed(2)}</td>
+                                <td class="text-right">
+                                    $${parseFloat(item.monto).toFixed(2)}
+                                    ${item.es_nota_credito ? ` <br><small class="text-info">(-$${parseFloat(item.monto).toFixed(2)})</small>` : ''}
+                                </td>
                                 </tr>
                                 `).join('')}                    </tbody>
                     <tfoot>
@@ -989,7 +1012,7 @@ export class InformesPage {
         const isSedeFiltered = this.selectedLugarId !== '';
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
         
-        const totalPagado = this.data.reduce((acc, item) => acc + parseFloat(item.monto_pagado || 0), 0);
+        const totalPagado = this.data.reduce((acc, item) => acc + (item.es_nota_credito ? 0 : parseFloat(item.monto_pagado || 0)), 0);
 
         content.innerHTML = `
             <div class="report-paper p-4 bg-white border">
@@ -1021,8 +1044,14 @@ export class InformesPage {
                                 <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
                                 <td>${capitalizedDay} ${dateStr} <small>(${item.hora.substring(0, 5)} hs)</small></td>
-                                <td>${item.actividad_nombre}</td>
-                                <td class="text-right font-weight-bold">$${parseFloat(item.monto_pagado || 0).toFixed(2)}</td>
+                                <td>
+                                    ${item.actividad_nombre}
+                                    ${item.es_nota_credito ? '<span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>' : ''}
+                                </td>
+                                <td class="text-right font-weight-bold">
+                                    $${parseFloat(item.monto_pagado || 0).toFixed(2)}
+                                    ${item.es_nota_credito ? ` <br><small class="text-info font-weight-normal">(-$${parseFloat(item.monto_pagado || 0).toFixed(2)})</small>` : ''}
+                                </td>
                                 <td>${formatDateDashes(item.fecha_pago)}</td>
                             </tr>
                         `}).join('')}

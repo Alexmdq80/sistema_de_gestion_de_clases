@@ -21,7 +21,8 @@ router.get('/cuotas-sociales', asyncHandler(async (req, res) => {
             ps.mes_abono,
             ps.monto,
             ps.fecha_pago,
-            ps.observaciones
+            ps.observaciones,
+            EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) as es_nota_credito
         FROM PagoSocio ps
         JOIN Socio s ON ps.socio_id = s.id
         JOIN Practicante pr ON s.practicante_id = pr.id
@@ -147,7 +148,8 @@ router.get('/alquiler-espacios', asyncHandler(async (req, res) => {
             c.monto_referencia_espacio as monto_esperado,
             c.monto_pago_espacio as monto_pagado,
             c.fecha_pago_espacio as fecha_pago,
-            (IFNULL(c.monto_referencia_espacio, 0) - IFNULL(c.monto_pago_espacio, 0)) as diferencia
+            (IFNULL(c.monto_referencia_espacio, 0) - IFNULL(c.monto_pago_espacio, 0)) as diferencia,
+            EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) as es_nota_credito
         FROM Clase c
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id
@@ -190,7 +192,8 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
 
     // 1. Obtener Cuotas Sociales
     let sqlCuotas = `
-        SELECT l.nombre as lugar_nombre, pr.nombre_completo, ps.monto, ps.mes_abono
+        SELECT l.nombre as lugar_nombre, pr.nombre_completo, ps.monto, ps.mes_abono,
+        EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) as es_nota_credito
         FROM PagoSocio ps
         JOIN Socio s ON ps.socio_id = s.id
         JOIN Practicante pr ON s.practicante_id = pr.id
@@ -221,7 +224,8 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
             c.monto_pago_espacio as monto,
             c.estado,
             c.observaciones,
-            c.motivo_cancelacion
+            c.motivo_cancelacion,
+            EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) as es_nota_credito
         FROM Clase c
         JOIN Lugar l ON c.lugar_id = l.id
         JOIN Actividad a ON c.actividad_id = a.id

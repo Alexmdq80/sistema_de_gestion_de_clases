@@ -77,7 +77,9 @@ export class Pago {
                 -- Incomes (Student payments and Social Fees)
                 SELECT 
                     p.id, p.practicante_id, p.abono_id, p.deuda_id, p.pago_socio_id, p.mes_abono, p.lugar_id, 
-                    p.fecha, p.monto, p.metodo_pago, p.notas, p.deleted_at, p.created_at, p.updated_at,
+                    p.fecha, 
+                    CASE WHEN p.metodo_pago = 'nota_credito' THEN 0 ELSE p.monto END as monto,
+                    p.metodo_pago, p.notas, p.deleted_at, p.created_at, p.updated_at,
                     COALESCE(ta.nombre, 'Recepción Cuota Social') as tipo_abono_nombre, 
                     ta.categoria, 
                     pr.nombre_completo as practicante_nombre,
@@ -112,9 +114,15 @@ export class Pago {
                     ) as mes_abono, 
                     c.lugar_id, 
                     COALESCE(c.fecha_pago_espacio, c.fecha) as fecha, 
-                    IFNULL(c.monto_pago_espacio, 0) * -1 as monto, 
-                    'transferencia' as metodo_pago, 
-                    CONCAT('Costo de Espacio: ', c.estado) as notas, 
+                    CASE 
+                        WHEN EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) THEN 0
+                        ELSE IFNULL(c.monto_pago_espacio, 0)
+                    END * -1 as monto, 
+                    CASE 
+                        WHEN EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) THEN 'nota_credito'
+                        ELSE 'transferencia'
+                    END as metodo_pago, 
+                    CONCAT('Costo de Espacio: ', c.estado, IF(EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL), ' [PAGADO CON NC]', '')) as notas, 
                     c.deleted_at, c.created_at, c.updated_at,
                     'Costo de Espacio' as tipo_abono_nombre, 
                     NULL as categoria, 
@@ -139,9 +147,15 @@ export class Pago {
                     ps.id * -1000 as id, pr.id as practicante_id, NULL as abono_id, NULL as deuda_id, ps.id as pago_socio_id, 
                     ps.mes_abono, l.id as lugar_id, 
                     ps.fecha_pago as fecha, 
-                    ps.monto * -1 as monto, 
-                    'efectivo' as metodo_pago, 
-                    CONCAT('Pago Cuota Social al Club: ', ps.observaciones) as notas, 
+                    CASE 
+                        WHEN EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) THEN 0
+                        ELSE ps.monto
+                    END * -1 as monto, 
+                    CASE 
+                        WHEN EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) THEN 'nota_credito'
+                        ELSE 'efectivo'
+                    END as metodo_pago, 
+                    CONCAT('Pago Cuota Social al Club: ', ps.observaciones, IF(EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL), ' [PAGADO CON NC]', '')) as notas, 
                     ps.deleted_at, ps.created_at, ps.updated_at,
                     'Egreso Cuota Social (Club)' as tipo_abono_nombre, 
                     NULL as categoria, 
