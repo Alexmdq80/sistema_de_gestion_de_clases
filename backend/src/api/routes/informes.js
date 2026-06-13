@@ -18,6 +18,7 @@ router.get('/cuotas-sociales', asyncHandler(async (req, res) => {
         SELECT 
             l.nombre as lugar_nombre,
             pr.nombre_completo as practicante_nombre,
+            s.numero_socio,
             ps.mes_abono,
             ps.monto,
             ps.fecha_pago,
@@ -192,7 +193,7 @@ router.get('/consolidado-sede', asyncHandler(async (req, res) => {
 
     // 1. Obtener Cuotas Sociales
     let sqlCuotas = `
-        SELECT l.nombre as lugar_nombre, pr.nombre_completo, ps.monto, ps.mes_abono,
+        SELECT l.nombre as lugar_nombre, pr.nombre_completo, s.numero_socio, ps.monto, ps.mes_abono,
         EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) as es_nota_credito
         FROM PagoSocio ps
         JOIN Socio s ON ps.socio_id = s.id

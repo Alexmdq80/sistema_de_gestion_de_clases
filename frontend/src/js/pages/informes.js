@@ -614,6 +614,7 @@ export class InformesPage {
                         <thead>
                             <tr>
                                 <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cons-cuotas" checked title="Seleccionar todos"></th>
+                                <th>Socio Nº</th>
                                 <th>Practicante</th>
                                 <th>Concepto</th>
                                 <th class="text-right">Monto</th>
@@ -623,6 +624,7 @@ export class InformesPage {
                             ${cuotas.map((c, index) => `
                                 <tr data-index="${index}">
                                     <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox-cuota" checked></td>
+                                    <td>${c.numero_socio || '-'}</td>
                                     <td>
                                         ${c.nombre_completo}
                                         ${c.es_nota_credito ? '<span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>' : ''}
@@ -634,11 +636,11 @@ export class InformesPage {
                                     </td>
                                 </tr>
                             `).join('')}
-                            ${cuotas.length === 0 ? '<tr><td colspan="4" class="text-center text-muted">No se registraron cuotas</td></tr>' : ''}
+                            ${cuotas.length === 0 ? '<tr><td colspan="5" class="text-center text-muted">No se registraron cuotas</td></tr>' : ''}
                         </tbody>
                         <tfoot>
                             <tr class="font-weight-bold bg-light">
-                                <td colspan="2" class="no-print"></td>
+                                <td colspan="3" class="no-print"></td>
                                 <td class="text-right">Subtotal Cuotas:</td>
                                 <td class="text-right" id="subtotal-cons-cuotas">$${totalCuotas.toFixed(2)}</td>
                             </tr>
@@ -972,9 +974,10 @@ export class InformesPage {
                         <tr>
                             <th class="no-print" style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cuotas" checked title="Seleccionar todos"></th>
                             ${!isSedeFiltered ? '<th>Sede / Club</th>' : ''}
+                            <th>Socio Nº</th>
                             <th>Practicante</th>
                             <th>Mes Abonado</th>
-                            <th>Fecha Cobro</th>
+                            <th>Fecha Pago</th>
                             <th class="text-right">Monto</th>
                         </tr>
                     </thead>
@@ -983,6 +986,7 @@ export class InformesPage {
                             <tr data-index="${index}">
                                 <td class="no-print" style="text-align: center;"><input type="checkbox" class="row-checkbox" checked></td>
                                 ${!isSedeFiltered ? `<td>${item.lugar_nombre}</td>` : ''}
+                                <td>${item.numero_socio || '-'}</td>
                                 <td>
                                     ${item.practicante_nombre}
                                     ${item.es_nota_credito ? '<span class="badge badge-info ml-1" title="Pagado con Nota de Crédito">NC</span>' : ''}
@@ -997,7 +1001,7 @@ export class InformesPage {
                                 `).join('')}                    </tbody>
                     <tfoot>
                         <tr class="font-weight-bold" style="font-size: 1.2rem; background: #f8f9fa;">
-                            <td colspan="${isSedeFiltered ? '4' : '5'}" class="text-right">TOTAL RECAUDADO:</td>
+                            <td colspan="${isSedeFiltered ? '5' : '6'}" class="text-right">TOTAL RECAUDADO:</td>
                             <td class="text-right text-success" id="cuotas-total-display">$${total.toFixed(2)}</td>
                         </tr>
                     </tfoot>
