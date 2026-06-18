@@ -5,4 +5,4 @@ para usar Laravel, recordar modificar client.js
 const API_BASE_URL = '/api'; // Apuntando al viejo backend de Node via Vite Proxy
 
 PRÓXIMA SESIÓN:
-- Revisar si hay otros lugares donde se creen abonos que necesiten esta lógica.
+- Seguir con la migración a Laravel si es necesario.

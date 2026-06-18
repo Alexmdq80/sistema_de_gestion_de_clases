@@ -1153,13 +1153,14 @@ export class InformesPage {
         const sedeNombre = isSedeFiltered ? this.lugares.find(l => l.id == this.selectedLugarId)?.nombre : 'Todas las Sedes';
         const d = this.data;
 
-        const totalGeneralIngresos = Object.values(d).reduce((acc, cat) => acc + cat.total, 0);
-        const totalPagosCount = Object.values(d).reduce((acc, cat) => acc + cat.pagos, 0);
-        const totalHorasGrupales = Object.values(d).reduce((acc, cat) => acc + cat.horas_grupales, 0);
-        const totalHorasFlexibles = Object.values(d).reduce((acc, cat) => acc + cat.horas_flexibles, 0);
+        const totalGeneralIngresos = Object.values(d).reduce((acc, cat) => acc + (cat.total || 0), 0);
+        const totalHorasGrupales = Object.values(d).reduce((acc, cat) => acc + (cat.horas_grupales || 0), 0);
+        const totalHorasFlexibles = Object.values(d).reduce((acc, cat) => acc + (cat.horas_flexibles || 0), 0);
         const totalHorasDictadas = totalHorasGrupales + totalHorasFlexibles;
-        const totalCostoSalon = Object.values(d).reduce((acc, cat) => acc + cat.costo_salon_grupal + cat.costo_salon_flexible, 0);
+        const totalCostoSalon = Object.values(d).reduce((acc, cat) => acc + (cat.costo_salon_grupal || 0) + (cat.costo_salon_flexible || 0), 0);
+        
         const totalMargenNeto = totalGeneralIngresos - totalCostoSalon;
+        const totalResultadoCaja = totalMargenNeto + (d.totalNCApplied || 0);
         const totalPctMargen = totalGeneralIngresos > 0 ? (totalMargenNeto / totalGeneralIngresos) * 100 : 0;
 
         content.innerHTML = `
@@ -1172,7 +1173,7 @@ export class InformesPage {
                         <h2 class="text-primary" style="font-size: 2.2rem; font-weight: 800;">$${totalGeneralIngresos.toFixed(2)}</h2>
                     </div>
                     <div class="card p-4 bg-light border-success shadow-sm text-center">
-                        <h4 class="text-muted text-uppercase small font-weight-bold">Margen Neto General</h4>
+                        <h4 class="text-muted text-uppercase small font-weight-bold">Margen Operativo</h4>
                         <h2 class="text-success" style="font-size: 2.2rem; font-weight: 800;">$${totalMargenNeto.toFixed(2)}</h2>
                     </div>
                     <div class="card p-4 bg-light border-secondary shadow-sm text-center">
@@ -1183,12 +1184,13 @@ export class InformesPage {
 
                 <div class="report-body">
                     ${Object.entries(d).map(([key, cat]) => {
+                        if (key === 'totalNCApplied') return '';
                         if (cat.total === 0 && cat.detalles.length === 0 && cat.horas_grupales === 0 && cat.horas_flexibles === 0) return '';
                         
-                        const costoSalonTotal = cat.costo_salon_grupal + cat.costo_salon_flexible;
-                        const margenNeto = cat.total - costoSalonTotal;
-                        const pctMargen = cat.total > 0 ? (margenNeto / cat.total) * 100 : 0;
-                        const horasTotales = cat.horas_grupales + cat.horas_flexibles;
+                        const costoSalonTotal = (cat.costo_salon_grupal || 0) + (cat.costo_salon_flexible || 0);
+                        const margenNeto = (cat.total || 0) - costoSalonTotal;
+                        const pctMargen = (cat.total || 0) > 0 ? (margenNeto / cat.total) * 100 : 0;
+                        const horasTotales = (cat.horas_grupales || 0) + (cat.horas_flexibles || 0);
 
                         return `
                         <div class="activity-section mb-5" style="page-break-inside: avoid; border: 1px solid #ddd; border-radius: 10px; padding: 1.5rem;">
@@ -1226,7 +1228,7 @@ export class InformesPage {
                                 </div>
                                 <div class="p-2 border rounded bg-light">
                                     <small class="text-muted text-uppercase d-block mb-1">Margen / Hora</small>
-                                    <span class="font-weight-bold text-primary">$${horasTotales > 0 ? (margenNeto / horasTotales).toFixed(2) : '0.00'}</span>
+                                    <span class="font-weight-bold text-primary">${horasTotales > 0 ? (margenNeto / horasTotales).toFixed(2) : '0.00'}</span>
                                 </div>
                             </div>
                             
@@ -1262,9 +1264,9 @@ export class InformesPage {
 
                 <div class="mt-5 p-4 border rounded bg-dark text-white shadow-lg" style="page-break-inside: avoid;">
                     <div class="flex justify-between align-items-center mb-4 border-bottom border-secondary pb-3">
-                        <h2 class="mb-0 text-uppercase" style="letter-spacing: 2px; font-weight: 800;">Balance General Final</h2>
+                        <h2 class="mb-0 text-uppercase" style="letter-spacing: 2px; font-weight: 800;">Balance Operativo y de Caja</h2>
                         <div class="text-right">
-                            <span class="badge badge-success p-2 px-3" style="font-size: 1rem;">${totalPctMargen.toFixed(1)}% RENTABILIDAD</span>
+                            <span class="badge badge-success p-2 px-3" style="font-size: 1rem;">${totalPctMargen.toFixed(1)}% RENTABILIDAD REAL</span>
                         </div>
                     </div>
                     
@@ -1274,18 +1276,26 @@ export class InformesPage {
                             <h3 class="mb-0" style="font-weight: 700;">$${totalGeneralIngresos.toFixed(2)}</h3>
                         </div>
                         <div>
-                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Total Costos Salón</small>
+                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Total Costos (Operativos)</small>
                             <h3 class="mb-0 text-warning" style="font-weight: 700;">$${totalCostoSalon.toFixed(2)}</h3>
                         </div>
-                        <div>
-                            <small class="d-block text-uppercase mb-2" style="opacity: 0.7;">Horas Dictadas</small>
-                            <h3 class="mb-0" style="font-weight: 700;">${totalHorasDictadas.toFixed(1)}h</h3>
+                        <div class="bg-secondary rounded p-2 text-white">
+                            <small class="d-block text-uppercase mb-1" style="opacity: 0.9;">MARGEN OPERATIVO</small>
+                            <h2 class="mb-0" style="font-weight: 900; font-size: 1.6rem;">$${totalMargenNeto.toFixed(2)}</h2>
                         </div>
-                        <div class="bg-success rounded p-2 text-white">
-                            <small class="d-block text-uppercase mb-1" style="opacity: 0.9;">MARGEN NETO</small>
-                            <h2 class="mb-0" style="font-weight: 900; font-size: 2.2rem;">$${totalMargenNeto.toFixed(2)}</h2>
+                        <div class="bg-success rounded p-2 text-white border border-light">
+                            <small class="d-block text-uppercase mb-1" style="opacity: 0.9;">SALDO DE CAJA FINAL</small>
+                            <h2 class="mb-0" style="font-weight: 900; font-size: 1.6rem;">$${totalResultadoCaja.toFixed(2)}</h2>
                         </div>
                     </div>
+
+                    ${d.totalNCApplied > 0 ? `
+                        <div class="mt-3 pt-2 border-top border-secondary text-right">
+                            <small class="text-info font-italic">
+                                * Se aplicaron $${d.totalNCApplied.toFixed(2)} en Notas de Crédito, ahorrados del flujo de caja.
+                            </small>
+                        </div>
+                    ` : ''}
                 </div>
 
                 ${this.renderReportFooter()}

@@ -256,8 +256,9 @@ export class PagoService {
      * @param {number} userId 
      * @param {string} [mes_abono=null] - Optional override for the accrual month
      * @param {boolean} [finalizar_deuda=false] - If true, adjusts monto_pactado to match total payments
+     * @param {boolean} [generar_deuda=false] - If true, creates a Deuda record for any remaining balance
      */
-    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId, mes_abono = null, finalizar_deuda = false) {
+    static async addPaymentToAbono(abonoId, monto, metodoPago, fecha, notas, userId, mes_abono = null, finalizar_deuda = false, generar_deuda = false) {
         const connection = await pool.getConnection();
         await connection.beginTransaction();
 
@@ -267,9 +268,17 @@ export class PagoService {
 
             const todayStr = fecha || new Date().toISOString().split('T')[0];
 
+            // 1. Check if there's an existing pending debt for this abono
+            const [existingDebts] = await connection.execute(
+                'SELECT * FROM Deuda WHERE abono_id = ? AND estado = "pendiente" AND deleted_at IS NULL',
+                [abonoId]
+            );
+            const existingDeuda = existingDebts.length > 0 ? existingDebts[0] : null;
+
             const pagoData = {
                 practicante_id: abono.practicante_id,
                 abono_id: abono.id,
+                deuda_id: existingDeuda ? existingDeuda.id : null,
                 mes_abono: mes_abono || abono.mes_abono,
                 lugar_id: abono.lugar_id,
                 fecha: todayStr,
@@ -280,6 +289,7 @@ export class PagoService {
 
             const newPago = await Pago.create(pagoData, connection, userId);
 
+            // 2. If we are finalizing the debt, we adjust pactado and cancel any pending debt record
             if (finalizar_deuda) {
                 // Adjust monto_pactado to be the sum of all payments (including the new one)
                 const [rows] = await connection.execute(
@@ -302,6 +312,40 @@ export class PagoService {
                 
                 const updatedAbono = await Abono.findById(abonoId, connection);
                 await Abono.recordHistory(abonoId, 'UPDATE', oldAbono, updatedAbono.toJSON(), userId, connection);
+
+                // If there was a pending debt record, cancel it since it's no longer owed
+                if (existingDeuda) {
+                    await connection.execute('UPDATE Deuda SET estado = "cancelada" WHERE id = ?', [existingDeuda.id]);
+                    await Deuda.recordHistory(existingDeuda.id, 'CANCEL', existingDeuda, { ...existingDeuda, estado: 'cancelada' }, userId, connection);
+                }
+            } else {
+                // 3. If not finalizing, check if we should update or create a debt record
+                const balance = await Abono.getBalance(abonoId, connection);
+
+                if (existingDeuda) {
+                    // Check if the debt is now fully paid
+                    const [pRows] = await connection.execute(
+                        'SELECT SUM(monto) as total_pagado FROM Pago WHERE deuda_id = ? AND deleted_at IS NULL',
+                        [existingDeuda.id]
+                    );
+                    const totalPagadoDeuda = pRows[0].total_pagado || 0;
+
+                    if (totalPagadoDeuda >= existingDeuda.monto - 0.01) {
+                        await connection.execute('UPDATE Deuda SET estado = "pagada" WHERE id = ?', [existingDeuda.id]);
+                        await Deuda.recordHistory(existingDeuda.id, 'PAY', existingDeuda, { ...existingDeuda, estado: 'pagada' }, userId, connection);
+                    }
+                } else if (generar_deuda && balance.saldo_pendiente > 0.01) {
+                    // Create a new debt record if requested and balance remains
+                    await Deuda.create({
+                        practicante_id: abono.practicante_id,
+                        monto: balance.saldo_pendiente,
+                        concepto: `Saldo pendiente: (PAGO PARCIAL) ${abono.mes_abono || ''}`,
+                        fecha: todayStr,
+                        estado: 'pendiente',
+                        abono_id: abonoId,
+                        usuario_id: userId
+                    }, connection, userId);
+                }
             }
 
             await connection.commit();
@@ -431,8 +475,39 @@ export class PagoService {
             );
 
             // 2. Mark related abono as 'cancelado' if it exists
+            // and cancel any associated pending debts
             if (pago.abono_id) {
                 await Abono.updateStatus(pago.abono_id, 'cancelado', connection, userId);
+                
+                // Cancel any pending debt record for this abono
+                const [debtsToCancel] = await connection.execute(
+                    'SELECT * FROM Deuda WHERE abono_id = ? AND estado = "pendiente" AND deleted_at IS NULL',
+                    [pago.abono_id]
+                );
+                for (const d of debtsToCancel) {
+                    await connection.execute('UPDATE Deuda SET estado = "cancelada" WHERE id = ?', [d.id]);
+                    await Deuda.recordHistory(d.id, 'CANCEL', d, { ...d, estado: 'cancelada' }, userId, connection);
+                }
+            }
+
+            // 2b. If the payment was linked to a debt, check if we need to re-open it
+            if (pago.deuda_id) {
+                const [deudaRows] = await connection.execute('SELECT * FROM Deuda WHERE id = ?', [pago.deuda_id]);
+                if (deudaRows.length > 0) {
+                    const debt = deudaRows[0];
+                    if (debt.estado === 'pagada') {
+                        // Check if remaining payments are enough to keep it as 'pagada'
+                        const [pRows] = await connection.execute(
+                            'SELECT SUM(monto) as total_pagado FROM Pago WHERE deuda_id = ? AND id != ? AND deleted_at IS NULL',
+                            [pago.deuda_id, pagoId]
+                        );
+                        const totalRemaining = pRows[0].total_pagado || 0;
+                        if (totalRemaining < debt.monto - 0.01) {
+                            await connection.execute('UPDATE Deuda SET estado = "pendiente" WHERE id = ?', [pago.deuda_id]);
+                            await Deuda.recordHistory(pago.deuda_id, 'REOPEN', debt, { ...debt, estado: 'pendiente' }, userId, connection);
+                        }
+                    }
+                }
             }
 
             // 3. Delete related PagoSocio if it exists

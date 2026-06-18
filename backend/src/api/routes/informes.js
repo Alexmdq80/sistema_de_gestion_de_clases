@@ -270,50 +270,45 @@ router.get('/balance-mensual', asyncHandler(async (req, res) => {
 
     let ingresosAbonos = 0;
     let ingresosCuotas = 0;
+    let otrosIngresos = 0;
     let egresosAlquiler = 0;
     let egresosCuotas = 0;
+    let otrosEgresos = 0;
 
     allPagos.forEach(p => {
+        // Skip non-cash movements (Credit Notes) to match liquidity reports
+        if (p.metodo_pago === 'nota_credito') return;
+
         const monto = Math.abs(parseFloat(p.monto));
+        const nombre = p.tipo_abono_nombre;
+
         if (p.pago_tipo === 'ingreso') {
-            // Social fee or abono?
-            if (p.tipo_abono_nombre === 'Recepción Cuota Social' || !p.categoria) {
+            if (p.categoria) {
+                // Payments for subscriptions (Tai Chi, Yoga, etc.)
+                ingresosAbonos += monto;
+            } else if (nombre === 'Recepción Cuota Social' || nombre === 'Cuota Social') {
+                // Actual social fee receipts from students
                 ingresosCuotas += monto;
             } else {
-                ingresosAbonos += monto;
+                // Other cash inflows (Sales, etc.)
+                otrosIngresos += monto;
             }
         } else if (p.pago_tipo === 'egreso') {
-            if (p.tipo_abono_nombre === 'Costo de Espacio') {
+            if (nombre === 'Costo de Espacio') {
                 egresosAlquiler += monto;
-            } else if (p.tipo_abono_nombre === 'Egreso Cuota Social (Club)') {
+            } else if (nombre === 'Egreso Cuota Social (Club)') {
                 egresosCuotas += monto;
+            } else {
+                // Other cash outflows (Extra expenses)
+                otrosEgresos += monto;
             }
         }
     });
 
-    // 2. Otros Movimientos de Caja (Ventas, Gastos Extra)
+    // 2. Cálculo de Horas para Rentabilidad
     const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
     const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
 
-    let sqlMovCaja = `
-        SELECT m.tipo, SUM(m.monto) as total
-        FROM MovimientoCaja m
-        LEFT JOIN Lugar l ON m.lugar_id = l.id
-        WHERE m.deleted_at IS NULL AND m.fecha >= ? AND m.fecha <= ?
-    `;
-    const paramsMovCaja = [firstDay, lastDay];
-
-    if (lugar_id) {
-        sqlMovCaja += ' AND (m.lugar_id = ? OR l.parent_id = ?)';
-        paramsMovCaja.push(lugar_id, lugar_id);
-    }
-
-    sqlMovCaja += ' GROUP BY m.tipo';
-    const [movimientos] = await pool.execute(sqlMovCaja, paramsMovCaja);
-    const otrosIngresos = parseFloat(movimientos.find(m => m.tipo === 'ingreso')?.total || 0);
-    const otrosEgresos = parseFloat(movimientos.find(m => m.tipo === 'egreso')?.total || 0);
-
-    // 3. Total de Horas para Rentabilidad
     let sqlHoras = `
         SELECT SUM(TIME_TO_SEC(TIMEDIFF(hora_fin, hora))) / 3600 as horas
         FROM Clase
@@ -491,10 +486,9 @@ router.get('/abonos-estado', asyncHandler(async (req, res) => {
             (
                 SELECT IFNULL(SUM(d.monto), 0)
                 FROM Deuda d
-                WHERE d.practicante_id = a.practicante_id 
+                WHERE d.abono_id = a.id
                   AND d.estado = 'pendiente'
                   AND d.deleted_at IS NULL
-                  AND (d.concepto LIKE CONCAT('%', a.mes_abono, '%') OR d.concepto LIKE '%abono%')
             ) as saldo_deuda_explicit,
             DATEDIFF(a.fecha_vencimiento, CURDATE()) as dias_para_vencer
         FROM Abono a
@@ -588,134 +582,137 @@ router.get('/ganancia-actividad', asyncHandler(async (req, res) => {
     const { mes, anio, lugar_id } = req.query;
     if (!mes || !anio) throw new AppError('Mes y año son obligatorios', 400);
 
-    let sql = `
-        SELECT 
-            ta.nombre as tipo_abono_nombre,
-            ta.categoria as tipo_abono_categoria,
-            SUM(p.monto) as total_recaudado,
-            COUNT(p.id) as cantidad_pagos
-        FROM Pago p
-        JOIN Abono ab ON p.abono_id = ab.id
-        JOIN TipoAbono ta ON ab.tipo_abono_id = ta.id
-        LEFT JOIN Lugar l ON p.lugar_id = l.id
-        WHERE p.deleted_at IS NULL
-          AND MONTH(p.fecha) = ? 
-          AND YEAR(p.fecha) = ?
-    `;
-    const params = [parseInt(mes, 10), parseInt(anio, 10)];
-
-    if (lugar_id) {
-        sql += ' AND (p.lugar_id = ? OR l.parent_id = ?)';
-        params.push(lugar_id, lugar_id);
-    }
-
-    sql += ' GROUP BY ta.nombre, ta.categoria';
-
-    const [rows] = await pool.execute(sql, params);
-
-    // --- NUEVA LÓGICA DE COSTOS POR ACTIVIDAD ---
-    const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
-    const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
-
-    let sqlClases = `
-        SELECT 
-            c.tipo as clase_tipo,
-            act.nombre as actividad_nombre,
-            l.costo_tarifa,
-            l.tipo_tarifa,
-            SUM(TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora))) / 3600 as horas
-        FROM Clase c
-        JOIN Actividad act ON c.actividad_id = act.id
-        JOIN Lugar l ON c.lugar_id = l.id
-        WHERE c.deleted_at IS NULL 
-          AND c.estado NOT IN ('cancelada', 'suspendida', 'sin_actividad')
-          AND c.fecha >= ? AND c.fecha <= ?
-    `;
-    const paramsClases = [firstDay, lastDay];
-
-    if (lugar_id) {
-        sqlClases += ' AND (c.lugar_id = ? OR l.parent_id = ?)';
-        paramsClases.push(lugar_id, lugar_id);
-    }
-    sqlClases += ' GROUP BY c.tipo, act.nombre, l.costo_tarifa, l.tipo_tarifa';
-
-    const [rowsClases] = await pool.execute(sqlClases, paramsClases);
+    // 1. Get all payments using the shared service (UNIFIED LOGIC)
+    const allPagos = await PagoService.getAllPayments({
+        mes: parseInt(mes, 10),
+        anio: parseInt(anio, 10),
+        lugar_id: lugar_id ? parseInt(lugar_id, 10) : undefined,
+        filter_by_mes_abono: false // Cash flow mode for consistency
+    });
 
     // Clasificación por actividad
     const resumen = {
         tai_chi: { nombre: 'Tai Chi Chuan', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
         chi_kung_yoga: { nombre: 'Chi Kung y Yoga Suave', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
         libre: { nombre: 'Libre / Combinado', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
-        otros: { nombre: 'Otros', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] }
+        otros: { nombre: 'Otras Actividades', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
+        generales: { nombre: 'Cuotas y Gastos Generales', total: 0, pagos: 0, horas_grupales: 0, horas_flexibles: 0, costo_salon_grupal: 0, costo_salon_flexible: 0, detalles: [] },
+        totalNCApplied: 0 // New field to track saved cash via NCs
     };
 
-    // Procesar Ingresos
-    rows.forEach(row => {
-        const nombre = row.tipo_abono_nombre.toLowerCase();
-        const categoria = row.tipo_abono_categoria; // 'grupal', 'particular', 'compartida'
-        const monto = parseFloat(row.total_recaudado);
-        const pagos = parseInt(row.cantidad_pagos);
+    // Procesar todos los movimientos (Ingresos y Egresos)
+    allPagos.forEach(p => {
+        // Skip Credit Notes (virtual movements) to match Balance liquidity
+        if (p.metodo_pago === 'nota_credito') return;
+        
+        const montoCash = Math.abs(parseFloat(p.monto));
+        const montoOriginal = Math.abs(parseFloat(p.monto_original));
+        const ncApplied = Math.max(0, montoOriginal - montoCash);
+        
+        const nombreAbono = (p.tipo_abono_nombre || 'S/D').toLowerCase();
+        const nombreActividad = (p.actividad_nombre || 'S/D').toLowerCase();
+        const categoria = p.categoria; // 'grupal', 'particular', 'compartida'
+        
         const item = { 
-            nombre: row.tipo_abono_nombre, 
-            total: monto, 
-            pagos: pagos,
-            categoria: categoria 
+            nombre: p.tipo_abono_nombre || (p.pago_tipo === 'ingreso' ? 'Ingreso Varios' : 'Egreso Varios'), 
+            total: p.pago_tipo === 'ingreso' ? montoCash : -montoOriginal, 
+            pagos: 1,
+            categoria: categoria,
+            nc_aplicada: ncApplied
         };
 
-        // Si NO es grupal, va directo a "otros" (clases particulares/compartidas)
-        if (categoria !== 'grupal') {
-            resumen.otros.total += monto;
-            resumen.otros.pagos += pagos;
-            resumen.otros.detalles.push(item);
-        } else if (nombre.includes('libre') || nombre.includes('combinado')) {
-            resumen.libre.total += monto;
-            resumen.libre.pagos += pagos;
-            resumen.libre.detalles.push(item);
-        } else if (nombre.includes('tai chi') || nombre.includes('taichi')) {
-            resumen.tai_chi.total += monto;
-            resumen.tai_chi.pagos += pagos;
-            resumen.tai_chi.detalles.push(item);
-        } else if (nombre.includes('chi kung') || nombre.includes('chikung') || nombre.includes('yoga') || nombre.includes('suave')) {
-            resumen.chi_kung_yoga.total += monto;
-            resumen.chi_kung_yoga.pagos += pagos;
-            resumen.chi_kung_yoga.detalles.push(item);
-        } else {
-            resumen.otros.total += monto;
-            resumen.otros.pagos += pagos;
-            resumen.otros.detalles.push(item);
-        }
-    });
+        let actKey = 'generales';
 
-    // Procesar Horas y Costos
-    rowsClases.forEach(row => {
-        const nombre = row.actividad_nombre.toLowerCase();
-        const horas = parseFloat(row.horas || 0);
-        const costoUnitario = parseFloat(row.costo_tarifa || 0);
-        const costoTotal = row.tipo_tarifa === 'por_hora' ? (horas * costoUnitario) : costoUnitario;
+        if (p.pago_tipo === 'ingreso') {
+            if (categoria) {
+                // Subscription incomes
+                if (categoria !== 'grupal') actKey = 'otros';
+                else if (nombreAbono.includes('libre') || nombreAbono.includes('combinado')) actKey = 'libre';
+                else if (nombreAbono.includes('tai chi') || nombreAbono.includes('taichi')) actKey = 'tai_chi';
+                else if (nombreAbono.includes('chi kung') || nombreAbono.includes('chikung') || nombreAbono.includes('yoga') || nombreAbono.includes('suave')) actKey = 'chi_kung_yoga';
+                else actKey = 'otros';
+                resumen[actKey].pagos += 1;
+            } else if (nombreAbono.includes('cuota social') || nombreAbono.includes('recepción')) {
+                actKey = 'generales';
+            } else {
+                actKey = 'generales';
+            }
+            resumen[actKey].total += montoCash;
+            resumen[actKey].detalles.push(item);
 
-        let actKey = 'otros';
-
-        // Solo clasificamos por actividad si la clase es GRUPAL
-        if (row.clase_tipo === 'grupal') {
-            if (nombre.includes('tai chi') || nombre.includes('taichi')) {
-                actKey = 'tai_chi';
-            } else if (nombre.includes('chi kung') || nombre.includes('chikung') || nombre.includes('yoga') || nombre.includes('suave')) {
-                actKey = 'chi_kung_yoga';
-            } else if (nombre.includes('libre') || nombre.includes('combinado')) {
-                actKey = 'libre';
+        } else if (p.pago_tipo === 'egreso') {
+            if (p.tipo_abono_nombre === 'Costo de Espacio') {
+                // Salon Cost expenses - Attribute to activity using p.actividad_nombre
+                
+                // If it's NOT grupal, it must go to 'otros' (Otras Actividades / Particulares)
+                if (categoria && categoria !== 'grupal') {
+                    actKey = 'otros';
+                } else if (nombreActividad.includes('tai chi') || nombreActividad.includes('taichi')) {
+                    actKey = 'tai_chi';
+                } else if (nombreActividad.includes('chi kung') || nombreActividad.includes('chikung') || nombreActividad.includes('yoga') || nombreActividad.includes('suave')) {
+                    actKey = 'chi_kung_yoga';
+                } else if (nombreActividad.includes('libre') || nombreActividad.includes('combinado')) {
+                    actKey = 'libre';
+                } else {
+                    actKey = 'otros';
+                }
+                
+                if (categoria === 'grupal' || !categoria) {
+                    resumen[actKey].costo_salon_grupal += montoOriginal;
+                } else {
+                    resumen[actKey].costo_salon_flexible += montoOriginal;
+                }
+            } else {
+                // Other expenses (Social fee club, sales, etc.) -> Generales
+                actKey = 'generales';
+                resumen[actKey].costo_salon_grupal += montoOriginal;
             }
             
-            resumen[actKey].horas_grupales += horas;
-            resumen[actKey].costo_salon_grupal += costoTotal;
-        } else {
-            // Si es flexible (particular), va siempre a "otros"
-            resumen.otros.horas_flexibles += horas;
-            resumen.otros.costo_salon_flexible += costoTotal;
+            resumen.totalNCApplied += ncApplied;
+            resumen[actKey].detalles.push({ ...item, nombre: `Gasto: ${item.nombre}` });
         }
     });
 
-    // --- REDISTRIBUCIÓN PROPORCIONAL DE INGRESOS "LIBRE" ---
-    if (resumen.libre.total > 0) {
+    // 2. Cálculo de Horas para Rentabilidad (needed for the UI ratio, not for margin calculation)
+    const firstDay = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    const lastDay = new Date(anio, mes, 0).toISOString().split('T')[0];
+
+    let sqlHoras = `
+        SELECT 
+            c.tipo as clase_tipo,
+            act.nombre as actividad_nombre,
+            SUM(TIME_TO_SEC(TIMEDIFF(c.hora_fin, c.hora))) / 3600 as horas
+        FROM Clase c
+        JOIN Actividad act ON c.actividad_id = act.id
+        WHERE c.deleted_at IS NULL 
+          AND c.estado NOT IN ('cancelada', 'suspendida', 'sin_actividad')
+          AND c.fecha >= ? AND c.fecha <= ?
+    `;
+    const paramsHoras = [firstDay, lastDay];
+    if (lugar_id) {
+        sqlHoras += ' AND (c.lugar_id = ? OR c.lugar_id IN (SELECT id FROM Lugar WHERE parent_id = ?))';
+        paramsHoras.push(lugar_id, lugar_id);
+    }
+    sqlHoras += ' GROUP BY c.tipo, act.nombre';
+
+    const [rowsHoras] = await pool.execute(sqlHoras, paramsHoras);
+    rowsHoras.forEach(row => {
+        const nombre = row.actividad_nombre.toLowerCase();
+        const horas = parseFloat(row.horas || 0);
+        let actKey = 'otros';
+
+        if (row.clase_tipo === 'grupal') {
+            if (nombre.includes('tai chi') || nombre.includes('taichi')) actKey = 'tai_chi';
+            else if (nombre.includes('chi kung') || nombre.includes('chikung') || nombre.includes('yoga') || nombre.includes('suave')) actKey = 'chi_kung_yoga';
+            else if (nombre.includes('libre') || nombre.includes('combinado')) actKey = 'libre';
+            resumen[actKey].horas_grupales += horas;
+        } else {
+            resumen.otros.horas_flexibles += horas;
+        }
+    });
+
+    // --- REDISTRIBUCIÓN PROPORCIONAL DE INGRESOS Y COSTOS "LIBRE" ---
+    if (resumen.libre.total > 0 || resumen.libre.costo_salon_grupal > 0) {
         const hTC = resumen.tai_chi.horas_grupales;
         const hCKY = resumen.chi_kung_yoga.horas_grupales;
         const totalH = hTC + hCKY;
@@ -723,33 +720,38 @@ router.get('/ganancia-actividad', asyncHandler(async (req, res) => {
         if (totalH > 0) {
             const ratioTC = hTC / totalH;
             const ratioCKY = hCKY / totalH;
+            
             const montoLibre = resumen.libre.total;
+            const costoLibre = resumen.libre.costo_salon_grupal;
             const pagosLibre = resumen.libre.pagos;
 
-            // Distribuir montos
+            // Distribuir ingresos
             resumen.tai_chi.total += montoLibre * ratioTC;
             resumen.chi_kung_yoga.total += montoLibre * ratioCKY;
 
+            // Distribuir costos
+            resumen.tai_chi.costo_salon_grupal += costoLibre * ratioTC;
+            resumen.chi_kung_yoga.costo_salon_grupal += costoLibre * ratioCKY;
+
             // Registrar la distribución en detalles para transparencia
-            if (montoLibre * ratioTC > 0) {
+            if (montoLibre > 0) {
                 resumen.tai_chi.detalles.push({
-                    nombre: `Ingreso Proporcional de Abonos Libres`,
+                    nombre: `Ingreso Prop. Abonos Libres`,
                     total: montoLibre * ratioTC,
-                    pagos: pagosLibre,
+                    pagos: 0,
                     categoria: 'distribucion'
                 });
-            }
-            if (montoLibre * ratioCKY > 0) {
                 resumen.chi_kung_yoga.detalles.push({
-                    nombre: `Ingreso Proporcional de Abonos Libres`,
+                    nombre: `Ingreso Prop. Abonos Libres`,
                     total: montoLibre * ratioCKY,
-                    pagos: pagosLibre,
+                    pagos: 0,
                     categoria: 'distribucion'
                 });
             }
 
             // Limpiar categoría Libre (ya está distribuida)
             resumen.libre.total = 0;
+            resumen.libre.costo_salon_grupal = 0;
             resumen.libre.pagos = 0;
             resumen.libre.detalles = [];
         }

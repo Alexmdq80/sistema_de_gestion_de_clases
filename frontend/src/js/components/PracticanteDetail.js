@@ -432,6 +432,12 @@ export class PracticanteDetail {
                         Finalizar deuda (el saldo restante NO se cobrará)
                     </label>
                 </div>
+                <div class="form-check" style="margin-top: 5px;">
+                    <input class="form-check-input" type="checkbox" id="partial-generar-deuda-checkbox">
+                    <label class="form-check-label" for="partial-generar-deuda-checkbox" style="font-weight: 500;">
+                        Registrar saldo como deuda explícita
+                    </label>
+                </div>
             </div>
 
             <button type="submit" id="partial-payment-submit-btn" class="btn btn-primary">Confirmar Abono</button>
@@ -1085,6 +1091,7 @@ export class PracticanteDetail {
         const metodo_pago = metodoPagoSelect.value;
         const notas = notasTextarea.value;
         const finalizar_deuda = partialPaymentForm.querySelector('#partial-finalizar-deuda-checkbox').checked;
+        const generar_deuda = partialPaymentForm.querySelector('#partial-generar-deuda-checkbox').checked;
 
         // Construct the payload for the POST /api/pagos/partial endpoint
         const payload = {
@@ -1094,7 +1101,8 @@ export class PracticanteDetail {
             fecha_pago: fecha_pago,
             metodo_pago: metodo_pago,
             notas: notas,
-            finalizar_deuda: finalizar_deuda
+            finalizar_deuda: finalizar_deuda,
+            generar_deuda: generar_deuda
         };
 
         // 2.4 Make the API call using the client helper
@@ -1301,7 +1309,8 @@ export class PracticanteDetail {
     const montoInput = form.querySelector('#partial-monto-input');
     const suggestionContainer = form.querySelector('#partial-debt-suggestion-container');
     const suggestionText = form.querySelector('#partial-debt-suggestion-text');
-    const checkbox = form.querySelector('#partial-finalizar-deuda-checkbox');
+    const finalCheckbox = form.querySelector('#partial-finalizar-deuda-checkbox');
+    const genCheckbox = form.querySelector('#partial-generar-deuda-checkbox');
 
     const updateSuggestion = () => {
         const currentMonto = parseFloat(montoInput.value) || 0;
@@ -1312,9 +1321,18 @@ export class PracticanteDetail {
             // We don't force it to be checked, let the user decide
         } else {
             suggestionContainer.style.display = 'none';
-            checkbox.checked = false;
+            finalCheckbox.checked = false;
+            genCheckbox.checked = false;
         }
     };
+
+    // Mutual exclusion logic
+    finalCheckbox.addEventListener('change', () => {
+        if (finalCheckbox.checked) genCheckbox.checked = false;
+    });
+    genCheckbox.addEventListener('change', () => {
+        if (genCheckbox.checked) finalCheckbox.checked = false;
+    });
 
     montoInput.addEventListener('input', updateSuggestion);
     updateSuggestion();

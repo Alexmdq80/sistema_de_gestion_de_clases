@@ -14,9 +14,11 @@ export class Pago {
         this.lugar_id = data.lugar_id || null;
         this.fecha = data.fecha || new Date().toISOString().split('T')[0];
         this.monto = data.monto;
+        this.monto_original = data.monto_original !== undefined ? data.monto_original : data.monto;
         this.metodo_pago = data.metodo_pago || null;
         this.notas = data.notas || null;
         this.tipo_abono_nombre = data.tipo_abono_nombre || null; 
+        this.actividad_nombre = data.actividad_nombre || null; 
         this.practicante_nombre = data.practicante_nombre || null; 
         this.categoria = data.categoria || null; 
         this.lugar_nombre = data.lugar_nombre || null; 
@@ -79,6 +81,7 @@ export class Pago {
                     p.id, p.practicante_id, p.abono_id, p.deuda_id, p.pago_socio_id, p.mes_abono, p.lugar_id, 
                     p.fecha, 
                     CASE WHEN p.metodo_pago = 'nota_credito' THEN 0 ELSE p.monto END as monto,
+                    p.monto as monto_original,
                     p.metodo_pago, p.notas, p.deleted_at, p.created_at, p.updated_at,
                     COALESCE(ta.nombre, 'Recepción Cuota Social') as tipo_abono_nombre, 
                     ta.categoria, 
@@ -89,8 +92,9 @@ export class Pago {
                     'ingreso' as pago_tipo,
                     ta.id as tipo_abono_id,
                     pr.es_profesor,
-                    NULL as fecha_clase,           -- ADDED
-                    NULL as fecha_pago_clase       -- ADDED
+                    NULL as fecha_clase,
+                    NULL as fecha_pago_clase,
+                    NULL as actividad_nombre
                 FROM Pago p
                 LEFT JOIN Abono a ON p.abono_id = a.id
                 LEFT JOIN TipoAbono ta ON a.tipo_abono_id = ta.id
@@ -118,6 +122,7 @@ export class Pago {
                         WHEN EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) THEN 0
                         ELSE IFNULL(c.monto_pago_espacio, 0)
                     END * -1 as monto, 
+                    IFNULL(c.monto_pago_espacio, 0) * -1 as monto_original,
                     CASE 
                         WHEN EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL) THEN 'nota_credito'
                         ELSE 'transferencia'
@@ -125,7 +130,7 @@ export class Pago {
                     CONCAT('Costo de Espacio: ', c.estado, IF(EXISTS(SELECT 1 FROM MovimientoCaja mc WHERE mc.usado_en_clase_id = c.id AND mc.deleted_at IS NULL), ' [PAGADO CON NC]', '')) as notas, 
                     c.deleted_at, c.created_at, c.updated_at,
                     'Costo de Espacio' as tipo_abono_nombre, 
-                    NULL as categoria, 
+                    c.tipo as categoria, 
                     p.nombre_completo as practicante_nombre,
                     NULL as fecha_vencimiento, 
                     l.nombre as lugar_nombre,
@@ -133,12 +138,15 @@ export class Pago {
                     'egreso' as pago_tipo,
                     NULL as tipo_abono_id,
                     1 as es_profesor,
-                    c.fecha as fecha_clase,           -- ADDED
-                    c.fecha_pago_espacio as fecha_pago_clase -- ADDED
+                    c.fecha as fecha_clase,
+                    c.fecha_pago_espacio as fecha_pago_clase,
+                    act.nombre as actividad_nombre
                 FROM Clase c
                 JOIN Lugar l ON c.lugar_id = l.id
                 JOIN Practicante p ON c.profesor_id = p.id
+                LEFT JOIN Actividad act ON c.actividad_id = act.id
                 WHERE c.deleted_at IS NULL AND (c.pago_espacio_realizado = 1 OR c.monto_pago_espacio > 0)
+
 
                 UNION ALL
 
@@ -151,6 +159,7 @@ export class Pago {
                         WHEN EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) THEN 0
                         ELSE ps.monto
                     END * -1 as monto, 
+                    ps.monto * -1 as monto_original,
                     CASE 
                         WHEN EXISTS(SELECT 1 FROM Pago p JOIN MovimientoCaja mc ON mc.usado_en_pago_id = p.id WHERE p.pago_socio_id = ps.id AND mc.deleted_at IS NULL) THEN 'nota_credito'
                         ELSE 'efectivo'
@@ -166,8 +175,9 @@ export class Pago {
                     'egreso' as pago_tipo,
                     NULL as tipo_abono_id,
                     pr.es_profesor,
-                    NULL as fecha_clase,           -- ADDED
-                    NULL as fecha_pago_clase       -- ADDED
+                    NULL as fecha_clase,
+                    NULL as fecha_pago_clase,
+                    NULL as actividad_nombre
                 FROM PagoSocio ps
                 JOIN Socio s ON ps.socio_id = s.id
                 JOIN Practicante pr ON s.practicante_id = pr.id
@@ -191,6 +201,7 @@ export class Pago {
                     m.lugar_id, 
                     m.fecha, 
                     CASE WHEN m.tipo = 'egreso' THEN m.monto * -1 ELSE m.monto END as monto, 
+                    CASE WHEN m.tipo = 'egreso' THEN m.monto * -1 ELSE m.monto END as monto_original, 
                     CASE WHEN m.categoria = 'Nota de Crédito' THEN 'nota_credito' ELSE 'efectivo' END as metodo_pago, 
                     m.descripcion as notas, 
                     m.deleted_at, m.created_at, m.updated_at,
@@ -204,7 +215,8 @@ export class Pago {
                     NULL as tipo_abono_id,
                     COALESCE(pr.es_profesor, 0) as es_profesor,
                     NULL as fecha_clase,
-                    NULL as fecha_pago_clase
+                    NULL as fecha_pago_clase,
+                    NULL as actividad_nombre
                 FROM MovimientoCaja m
                 LEFT JOIN Practicante pr ON m.practicante_id = pr.id
                 LEFT JOIN Lugar l ON m.lugar_id = l.id
@@ -481,9 +493,11 @@ sql += ' ORDER BY fecha DESC, created_at DESC';
             lugar_id: this.lugar_id,
             fecha: this.fecha,
             monto: this.monto,
+            monto_original: this.monto_original,
             metodo_pago: this.metodo_pago,
             notas: this.notas,
             tipo_abono_nombre: this.tipo_abono_nombre,
+            actividad_nombre: this.actividad_nombre,
             practicante_nombre: this.practicante_nombre,
             categoria: this.categoria,
             lugar_nombre: this.lugar_nombre,
